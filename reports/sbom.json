@@ -1,0 +1,1564 @@
+{
+  "spdxVersion": "SPDX-2.2",
+  "SPDXID": "SPDXRef-Document",
+  "creationInfo": {
+    "created": "2026-10-02T13:47:28Z",
+    "creators": [
+      "Tool: farcontrol scripts/sbom.sh"
+    ]
+  },
+  "name": "frtrol",
+  "versionInfo": "1.0.0",
+  "documentDescribes": [
+    "SPDXRef-Package-frtrol"
+  ],
+  "packages": [
+    {
+      "SPDXID": "SPDXRef-Package-frtrol",
+      "name": "frtrol",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "NOASSERTION",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ahash-0.8.12",
+      "name": "ahash",
+      "versionInfo": "0.8.12",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-android_system_properties-0.1.6",
+      "name": "android_system_properties",
+      "versionInfo": "0.1.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anstream-1.0.0",
+      "name": "anstream",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anstyle-1.0.14",
+      "name": "anstyle",
+      "versionInfo": "1.0.14",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anstyle-parse-1.0.0",
+      "name": "anstyle-parse",
+      "versionInfo": "1.0.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anstyle-query-1.1.5",
+      "name": "anstyle-query",
+      "versionInfo": "1.1.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anstyle-wincon-3.0.11",
+      "name": "anstyle-wincon",
+      "versionInfo": "3.0.11",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-anyhow-1.0.104",
+      "name": "anyhow",
+      "versionInfo": "1.0.104",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-async-trait-0.1.92",
+      "name": "async-trait",
+      "versionInfo": "0.1.92",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-atomic-waker-1.1.2",
+      "name": "atomic-waker",
+      "versionInfo": "1.1.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-autocfg-1.5.1",
+      "name": "autocfg",
+      "versionInfo": "1.5.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-axum-0.7.9",
+      "name": "axum",
+      "versionInfo": "0.7.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-axum-core-0.4.5",
+      "name": "axum-core",
+      "versionInfo": "0.4.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-base64-0.22.1",
+      "name": "base64",
+      "versionInfo": "0.22.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-bitflags-1.3.2",
+      "name": "bitflags",
+      "versionInfo": "1.3.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-bitflags-2.13.2",
+      "name": "bitflags",
+      "versionInfo": "2.13.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-block-buffer-0.10.4",
+      "name": "block-buffer",
+      "versionInfo": "0.10.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-bs58-0.5.1",
+      "name": "bs58",
+      "versionInfo": "0.5.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-bumpalo-3.20.3",
+      "name": "bumpalo",
+      "versionInfo": "3.20.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-bytes-1.12.1",
+      "name": "bytes",
+      "versionInfo": "1.12.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-cc-1.5.1",
+      "name": "cc",
+      "versionInfo": "1.5.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-cfg-if-1.0.5",
+      "name": "cfg-if",
+      "versionInfo": "1.0.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-chrono-0.4.45",
+      "name": "chrono",
+      "versionInfo": "0.4.45",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-clap-4.6.7",
+      "name": "clap",
+      "versionInfo": "4.6.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-clap_builder-4.6.7",
+      "name": "clap_builder",
+      "versionInfo": "4.6.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-clap_derive-4.6.7",
+      "name": "clap_derive",
+      "versionInfo": "4.6.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-clap_lex-1.1.1",
+      "name": "clap_lex",
+      "versionInfo": "1.1.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-colorchoice-1.0.5",
+      "name": "colorchoice",
+      "versionInfo": "1.0.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-core-foundation-sys-0.8.7",
+      "name": "core-foundation-sys",
+      "versionInfo": "0.8.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-cpufeatures-0.2.17",
+      "name": "cpufeatures",
+      "versionInfo": "0.2.17",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-crc32fast-1.5.2",
+      "name": "crc32fast",
+      "versionInfo": "1.5.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-crypto-common-0.1.7",
+      "name": "crypto-common",
+      "versionInfo": "0.1.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-deranged-0.5.8",
+      "name": "deranged",
+      "versionInfo": "0.5.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-digest-0.10.7",
+      "name": "digest",
+      "versionInfo": "0.10.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-displaydoc-0.2.7",
+      "name": "displaydoc",
+      "versionInfo": "0.2.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-downcast-rs-1.2.1",
+      "name": "downcast-rs",
+      "versionInfo": "1.2.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-equivalent-1.0.2",
+      "name": "equivalent",
+      "versionInfo": "1.0.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-errno-0.3.14",
+      "name": "errno",
+      "versionInfo": "0.3.14",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fallible-iterator-0.3.0",
+      "name": "fallible-iterator",
+      "versionInfo": "0.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fallible-streaming-iterator-0.1.9",
+      "name": "fallible-streaming-iterator",
+      "versionInfo": "0.1.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-filedescriptor-0.8.3",
+      "name": "filedescriptor",
+      "versionInfo": "0.8.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-find-msvc-tools-0.1.14",
+      "name": "find-msvc-tools",
+      "versionInfo": "0.1.14",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-flate2-1.1.10",
+      "name": "flate2",
+      "versionInfo": "1.1.10",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-fnv-1.0.7",
+      "name": "fnv",
+      "versionInfo": "1.0.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 / MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-form_urlencoded-1.2.2",
+      "name": "form_urlencoded",
+      "versionInfo": "1.2.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-frtrol-1.0.0",
+      "name": "frtrol",
+      "versionInfo": "1.0.0",
+      "downloadLocation": null,
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-futures-channel-0.3.34",
+      "name": "futures-channel",
+      "versionInfo": "0.3.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-futures-core-0.3.34",
+      "name": "futures-core",
+      "versionInfo": "0.3.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-futures-sink-0.3.34",
+      "name": "futures-sink",
+      "versionInfo": "0.3.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-futures-task-0.3.34",
+      "name": "futures-task",
+      "versionInfo": "0.3.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-futures-util-0.3.34",
+      "name": "futures-util",
+      "versionInfo": "0.3.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-generic-array-0.14.7",
+      "name": "generic-array",
+      "versionInfo": "0.14.7",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-getrandom-0.2.17",
+      "name": "getrandom",
+      "versionInfo": "0.2.17",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-h2-0.4.19",
+      "name": "h2",
+      "versionInfo": "0.4.19",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hashbrown-0.14.5",
+      "name": "hashbrown",
+      "versionInfo": "0.14.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hashbrown-0.17.1",
+      "name": "hashbrown",
+      "versionInfo": "0.17.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hashlink-0.9.1",
+      "name": "hashlink",
+      "versionInfo": "0.9.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-heck-0.5.0",
+      "name": "heck",
+      "versionInfo": "0.5.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hex-0.4.3",
+      "name": "hex",
+      "versionInfo": "0.4.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hmac-0.12.1",
+      "name": "hmac",
+      "versionInfo": "0.12.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-http-1.5.0",
+      "name": "http",
+      "versionInfo": "1.5.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-http-body-1.1.0",
+      "name": "http-body",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-http-body-util-0.1.5",
+      "name": "http-body-util",
+      "versionInfo": "0.1.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-httparse-1.10.1",
+      "name": "httparse",
+      "versionInfo": "1.10.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-httpdate-1.0.3",
+      "name": "httpdate",
+      "versionInfo": "1.0.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hyper-1.11.1",
+      "name": "hyper",
+      "versionInfo": "1.11.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-hyper-util-0.1.21",
+      "name": "hyper-util",
+      "versionInfo": "0.1.21",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-iana-time-zone-0.1.65",
+      "name": "iana-time-zone",
+      "versionInfo": "0.1.65",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-iana-time-zone-haiku-0.1.2",
+      "name": "iana-time-zone-haiku",
+      "versionInfo": "0.1.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_collections-2.3.0",
+      "name": "icu_collections",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_locale_core-2.3.0",
+      "name": "icu_locale_core",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_normalizer-2.3.0",
+      "name": "icu_normalizer",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_normalizer_data-2.3.0",
+      "name": "icu_normalizer_data",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_properties-2.3.0",
+      "name": "icu_properties",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_properties_data-2.3.0",
+      "name": "icu_properties_data",
+      "versionInfo": "2.3.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-icu_provider-2.3.1",
+      "name": "icu_provider",
+      "versionInfo": "2.3.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-idna-1.1.0",
+      "name": "idna",
+      "versionInfo": "1.1.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-idna_adapter-1.2.2",
+      "name": "idna_adapter",
+      "versionInfo": "1.2.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-indexmap-2.14.2",
+      "name": "indexmap",
+      "versionInfo": "2.14.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ioctl-rs-0.1.6",
+      "name": "ioctl-rs",
+      "versionInfo": "0.1.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-is_terminal_polyfill-1.70.2",
+      "name": "is_terminal_polyfill",
+      "versionInfo": "1.70.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-itoa-1.0.18",
+      "name": "itoa",
+      "versionInfo": "1.0.18",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-js-sys-0.3.106",
+      "name": "js-sys",
+      "versionInfo": "0.3.106",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-lazy_static-1.5.1",
+      "name": "lazy_static",
+      "versionInfo": "1.5.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-libc-0.2.189",
+      "name": "libc",
+      "versionInfo": "0.2.189",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-libsqlite3-sys-0.28.0",
+      "name": "libsqlite3-sys",
+      "versionInfo": "0.28.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-litemap-0.8.3",
+      "name": "litemap",
+      "versionInfo": "0.8.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-log-0.4.34",
+      "name": "log",
+      "versionInfo": "0.4.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-matchit-0.7.3",
+      "name": "matchit",
+      "versionInfo": "0.7.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT AND BSD-3-Clause"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-memchr-2.8.3",
+      "name": "memchr",
+      "versionInfo": "2.8.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unlicense OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-memoffset-0.6.5",
+      "name": "memoffset",
+      "versionInfo": "0.6.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mime-0.3.17",
+      "name": "mime",
+      "versionInfo": "0.3.17",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-miniz_oxide-0.9.1",
+      "name": "miniz_oxide",
+      "versionInfo": "0.9.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Zlib OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-mio-1.2.3",
+      "name": "mio",
+      "versionInfo": "1.2.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-nix-0.25.1",
+      "name": "nix",
+      "versionInfo": "0.25.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-num-conv-0.2.2",
+      "name": "num-conv",
+      "versionInfo": "0.2.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-num-traits-0.2.19",
+      "name": "num-traits",
+      "versionInfo": "0.2.19",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-once_cell-1.21.4",
+      "name": "once_cell",
+      "versionInfo": "1.21.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-once_cell_polyfill-1.70.2",
+      "name": "once_cell_polyfill",
+      "versionInfo": "1.70.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pem-3.0.6",
+      "name": "pem",
+      "versionInfo": "3.0.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-percent-encoding-2.3.2",
+      "name": "percent-encoding",
+      "versionInfo": "2.3.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pin-project-lite-0.2.17",
+      "name": "pin-project-lite",
+      "versionInfo": "0.2.17",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pin-utils-0.1.1",
+      "name": "pin-utils",
+      "versionInfo": "0.1.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-pkg-config-0.3.34",
+      "name": "pkg-config",
+      "versionInfo": "0.3.34",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-portable-pty-0.8.1",
+      "name": "portable-pty",
+      "versionInfo": "0.8.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-potential_utf-0.1.6",
+      "name": "potential_utf",
+      "versionInfo": "0.1.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-powerfmt-0.2.0",
+      "name": "powerfmt",
+      "versionInfo": "0.2.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ppv-lite86-0.2.21",
+      "name": "ppv-lite86",
+      "versionInfo": "0.2.21",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-proc-macro2-1.0.107",
+      "name": "proc-macro2",
+      "versionInfo": "1.0.107",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-quote-1.0.47",
+      "name": "quote",
+      "versionInfo": "1.0.47",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rand-0.8.8",
+      "name": "rand",
+      "versionInfo": "0.8.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rand_chacha-0.3.1",
+      "name": "rand_chacha",
+      "versionInfo": "0.3.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rand_core-0.6.4",
+      "name": "rand_core",
+      "versionInfo": "0.6.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rcgen-0.13.2",
+      "name": "rcgen",
+      "versionInfo": "0.13.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ring-0.17.14",
+      "name": "ring",
+      "versionInfo": "0.17.14",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 AND ISC"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rusqlite-0.31.0",
+      "name": "rusqlite",
+      "versionInfo": "0.31.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rustls-0.23.45",
+      "name": "rustls",
+      "versionInfo": "0.23.45",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR ISC OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rustls-pki-types-1.15.1",
+      "name": "rustls-pki-types",
+      "versionInfo": "1.15.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rustls-webpki-0.103.15",
+      "name": "rustls-webpki",
+      "versionInfo": "0.103.15",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "ISC"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-rustversion-1.0.23",
+      "name": "rustversion",
+      "versionInfo": "1.0.23",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ryu-1.0.23",
+      "name": "ryu",
+      "versionInfo": "1.0.23",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR BSL-1.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde-1.0.229",
+      "name": "serde",
+      "versionInfo": "1.0.229",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde_core-1.0.229",
+      "name": "serde_core",
+      "versionInfo": "1.0.229",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde_derive-1.0.229",
+      "name": "serde_derive",
+      "versionInfo": "1.0.229",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde_json-1.0.151",
+      "name": "serde_json",
+      "versionInfo": "1.0.151",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde_path_to_error-0.1.20",
+      "name": "serde_path_to_error",
+      "versionInfo": "0.1.20",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde_spanned-0.6.9",
+      "name": "serde_spanned",
+      "versionInfo": "0.6.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serde_urlencoded-0.7.1",
+      "name": "serde_urlencoded",
+      "versionInfo": "0.7.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serial-0.4.0",
+      "name": "serial",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serial-core-0.4.0",
+      "name": "serial-core",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serial-unix-0.4.0",
+      "name": "serial-unix",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-serial-windows-0.4.0",
+      "name": "serial-windows",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sha2-0.10.9",
+      "name": "sha2",
+      "versionInfo": "0.10.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-shared_library-0.1.9",
+      "name": "shared_library",
+      "versionInfo": "0.1.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0/MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-shell-words-1.1.1",
+      "name": "shell-words",
+      "versionInfo": "1.1.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-shlex-2.0.1",
+      "name": "shlex",
+      "versionInfo": "2.0.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-signal-hook-registry-1.4.8",
+      "name": "signal-hook-registry",
+      "versionInfo": "1.4.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-simd-adler32-0.3.10",
+      "name": "simd-adler32",
+      "versionInfo": "0.3.10",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-slab-0.4.12",
+      "name": "slab",
+      "versionInfo": "0.4.12",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-smallvec-1.16.2",
+      "name": "smallvec",
+      "versionInfo": "1.16.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-socket2-0.6.5",
+      "name": "socket2",
+      "versionInfo": "0.6.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-stable_deref_trait-1.2.1",
+      "name": "stable_deref_trait",
+      "versionInfo": "1.2.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-strsim-0.11.1",
+      "name": "strsim",
+      "versionInfo": "0.11.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-subtle-2.6.1",
+      "name": "subtle",
+      "versionInfo": "2.6.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "BSD-3-Clause"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-syn-2.0.119",
+      "name": "syn",
+      "versionInfo": "2.0.119",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-syn-3.0.6",
+      "name": "syn",
+      "versionInfo": "3.0.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-sync_wrapper-1.0.2",
+      "name": "sync_wrapper",
+      "versionInfo": "1.0.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-synstructure-0.14.0",
+      "name": "synstructure",
+      "versionInfo": "0.14.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-termios-0.2.2",
+      "name": "termios",
+      "versionInfo": "0.2.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-thiserror-1.0.69",
+      "name": "thiserror",
+      "versionInfo": "1.0.69",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-thiserror-impl-1.0.69",
+      "name": "thiserror-impl",
+      "versionInfo": "1.0.69",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-time-0.3.55",
+      "name": "time",
+      "versionInfo": "0.3.55",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-time-core-0.1.9",
+      "name": "time-core",
+      "versionInfo": "0.1.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tinystr-0.8.4",
+      "name": "tinystr",
+      "versionInfo": "0.8.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tinyvec-1.13.3",
+      "name": "tinyvec",
+      "versionInfo": "1.13.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Zlib OR Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tokio-1.53.1",
+      "name": "tokio",
+      "versionInfo": "1.53.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tokio-macros-2.7.2",
+      "name": "tokio-macros",
+      "versionInfo": "2.7.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tokio-rustls-0.26.6",
+      "name": "tokio-rustls",
+      "versionInfo": "0.26.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tokio-util-0.7.19",
+      "name": "tokio-util",
+      "versionInfo": "0.7.19",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-toml-0.8.23",
+      "name": "toml",
+      "versionInfo": "0.8.23",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-toml_datetime-0.6.11",
+      "name": "toml_datetime",
+      "versionInfo": "0.6.11",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-toml_edit-0.22.27",
+      "name": "toml_edit",
+      "versionInfo": "0.22.27",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-toml_write-0.1.2",
+      "name": "toml_write",
+      "versionInfo": "0.1.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tower-0.5.3",
+      "name": "tower",
+      "versionInfo": "0.5.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tower-layer-0.3.3",
+      "name": "tower-layer",
+      "versionInfo": "0.3.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tower-service-0.3.3",
+      "name": "tower-service",
+      "versionInfo": "0.3.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tracing-0.1.44",
+      "name": "tracing",
+      "versionInfo": "0.1.44",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-tracing-core-0.1.36",
+      "name": "tracing-core",
+      "versionInfo": "0.1.36",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-typenum-1.20.1",
+      "name": "typenum",
+      "versionInfo": "1.20.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-unicode-ident-1.0.26",
+      "name": "unicode-ident",
+      "versionInfo": "1.0.26",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "(MIT OR Apache-2.0) AND Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-untrusted-0.9.0",
+      "name": "untrusted",
+      "versionInfo": "0.9.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "ISC"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-ureq-2.12.1",
+      "name": "ureq",
+      "versionInfo": "2.12.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-url-2.5.8",
+      "name": "url",
+      "versionInfo": "2.5.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-utf8_iter-1.0.4",
+      "name": "utf8_iter",
+      "versionInfo": "1.0.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-utf8parse-0.2.2",
+      "name": "utf8parse",
+      "versionInfo": "0.2.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-vcpkg-0.2.15",
+      "name": "vcpkg",
+      "versionInfo": "0.2.15",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-version_check-0.9.5",
+      "name": "version_check",
+      "versionInfo": "0.9.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wasi-0.11.1+wasi-snapshot-preview1",
+      "name": "wasi",
+      "versionInfo": "0.11.1+wasi-snapshot-preview1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wasm-bindgen-0.2.129",
+      "name": "wasm-bindgen",
+      "versionInfo": "0.2.129",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wasm-bindgen-macro-0.2.129",
+      "name": "wasm-bindgen-macro",
+      "versionInfo": "0.2.129",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wasm-bindgen-macro-support-0.2.129",
+      "name": "wasm-bindgen-macro-support",
+      "versionInfo": "0.2.129",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-wasm-bindgen-shared-0.2.129",
+      "name": "wasm-bindgen-shared",
+      "versionInfo": "0.2.129",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-webpki-roots-0.26.11",
+      "name": "webpki-roots",
+      "versionInfo": "0.26.11",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "CDLA-Permissive-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-webpki-roots-1.0.9",
+      "name": "webpki-roots",
+      "versionInfo": "1.0.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "CDLA-Permissive-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-winapi-0.3.9",
+      "name": "winapi",
+      "versionInfo": "0.3.9",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-winapi-i686-pc-windows-gnu-0.4.0",
+      "name": "winapi-i686-pc-windows-gnu",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-winapi-x86_64-pc-windows-gnu-0.4.0",
+      "name": "winapi-x86_64-pc-windows-gnu",
+      "versionInfo": "0.4.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT/Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-core-0.62.2",
+      "name": "windows-core",
+      "versionInfo": "0.62.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-implement-0.60.2",
+      "name": "windows-implement",
+      "versionInfo": "0.60.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-interface-0.59.3",
+      "name": "windows-interface",
+      "versionInfo": "0.59.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-link-0.2.1",
+      "name": "windows-link",
+      "versionInfo": "0.2.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-result-0.4.1",
+      "name": "windows-result",
+      "versionInfo": "0.4.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-strings-0.5.1",
+      "name": "windows-strings",
+      "versionInfo": "0.5.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-sys-0.52.0",
+      "name": "windows-sys",
+      "versionInfo": "0.52.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-sys-0.61.2",
+      "name": "windows-sys",
+      "versionInfo": "0.61.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows-targets-0.52.6",
+      "name": "windows-targets",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_aarch64_gnullvm-0.52.6",
+      "name": "windows_aarch64_gnullvm",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_aarch64_msvc-0.52.6",
+      "name": "windows_aarch64_msvc",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_i686_gnu-0.52.6",
+      "name": "windows_i686_gnu",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_i686_gnullvm-0.52.6",
+      "name": "windows_i686_gnullvm",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_i686_msvc-0.52.6",
+      "name": "windows_i686_msvc",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_x86_64_gnu-0.52.6",
+      "name": "windows_x86_64_gnu",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_x86_64_gnullvm-0.52.6",
+      "name": "windows_x86_64_gnullvm",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-windows_x86_64_msvc-0.52.6",
+      "name": "windows_x86_64_msvc",
+      "versionInfo": "0.52.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-winnow-0.7.15",
+      "name": "winnow",
+      "versionInfo": "0.7.15",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-winreg-0.10.1",
+      "name": "winreg",
+      "versionInfo": "0.10.1",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-writeable-0.6.4",
+      "name": "writeable",
+      "versionInfo": "0.6.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-yasna-0.5.2",
+      "name": "yasna",
+      "versionInfo": "0.5.2",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT OR Apache-2.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-yoke-0.8.3",
+      "name": "yoke",
+      "versionInfo": "0.8.3",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-yoke-derive-0.8.4",
+      "name": "yoke-derive",
+      "versionInfo": "0.8.4",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerocopy-0.8.59",
+      "name": "zerocopy",
+      "versionInfo": "0.8.59",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "BSD-2-Clause OR Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerocopy-derive-0.8.59",
+      "name": "zerocopy-derive",
+      "versionInfo": "0.8.59",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "BSD-2-Clause OR Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerofrom-0.1.8",
+      "name": "zerofrom",
+      "versionInfo": "0.1.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerofrom-derive-0.1.8",
+      "name": "zerofrom-derive",
+      "versionInfo": "0.1.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zeroize-1.9.0",
+      "name": "zeroize",
+      "versionInfo": "1.9.0",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Apache-2.0 OR MIT"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerotrie-0.2.5",
+      "name": "zerotrie",
+      "versionInfo": "0.2.5",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerovec-0.11.8",
+      "name": "zerovec",
+      "versionInfo": "0.11.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zerovec-derive-0.11.6",
+      "name": "zerovec-derive",
+      "versionInfo": "0.11.6",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Unicode-3.0"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zlib-rs-0.6.8",
+      "name": "zlib-rs",
+      "versionInfo": "0.6.8",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "Zlib"
+    },
+    {
+      "SPDXID": "SPDXRef-Package-zmij-1.0.23",
+      "name": "zmij",
+      "versionInfo": "1.0.23",
+      "downloadLocation": "registry+https://github.com/rust-lang/crates.io-index",
+      "licenseConcluded": "MIT"
+    }
+  ]
+}

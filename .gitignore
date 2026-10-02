@@ -1,0 +1,12 @@
+/target
+*.db
+*.db-wal
+*.db-shm
+*.tar.gz
+farcontrol-backup-*
+agent-token
+admin-token
+cert.pem
+key.pem
+audit.jsonl
+daemon.log

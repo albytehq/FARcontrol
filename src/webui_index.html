@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FARcontrol — owner console</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+         background: #0d1117; color: #e6edf3; }
+  header { display: flex; justify-content: space-between; align-items: center;
+           padding: 14px 22px; border-bottom: 1px solid #21262d; flex-wrap: wrap; gap: 8px; }
+  header h1 { font-size: 16px; margin: 0; letter-spacing: 1px; }
+  header h1 b { color: #58a6ff; }
+  #meta { color: #8b949e; font-size: 12px; }
+  main { max-width: 1000px; margin: 0 auto; padding: 22px; }
+  section { margin-bottom: 34px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #8b949e;
+       border-bottom: 1px solid #21262d; padding-bottom: 6px; }
+  .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px;
+          padding: 14px 16px; margin: 10px 0; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .row .grow { flex: 1 1 240px; }
+  .k { color: #8b949e; font-size: 12px; }
+  .v { color: #e6edf3; }
+  .pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 12px; }
+  .pill.scope-to { background: #1f3a5f; color: #79c0ff; }
+  .pill.scope-fa { background: #3d2d00; color: #e3b341; }
+  .pill.st-active { background: #123d23; color: #56d364; }
+  .pill.st-dead { background: #490202; color: #f85149; }
+  .pill.st-pending { background: #3d2d00; color: #e3b341; }
+  button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px;
+           padding: 7px 14px; font: inherit; cursor: pointer; }
+  button:hover { background: #30363d; }
+  button.ok { background: #196c2e; border-color: #238636; }
+  button.ok:hover { background: #238636; }
+  button.no { background: #6e2229; border-color: #8a2c2c; }
+  button.no:hover { background: #8a2c2c; }
+  button.panic { background: #6e1111; border-color: #a02121; font-weight: bold; }
+  button.panic:hover { background: #a02121; }
+  select, input[type=password] { background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
+           border-radius: 6px; padding: 7px 9px; font: inherit; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 5px 9px; border-bottom: 1px solid #21262d; vertical-align: top; }
+  th { color: #8b949e; font-weight: normal; }
+  #login { max-width: 380px; margin: 12vh auto; }
+  #login .card { padding: 26px; }
+  #login h2 { border: 0; }
+  #err { color: #f85149; min-height: 20px; margin: 10px 0; }
+  #panicbar { position: fixed; right: 22px; bottom: 22px; }
+  .note { color: #8b949e; font-size: 12px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>FAR</b>CONTROL <span id="ver" class="k"></span></h1>
+  <div id="meta"></div>
+  <div>
+    <button id="logout" class="hidden">log out</button>
+  </div>
+</header>
+
+<div id="login">
+  <div class="card">
+    <h2>Owner login</h2>
+    <p class="note">The password is the admin token — shown by <b>frtrol start</b> / stored in
+       the admin-token file (0600). The console is loopback-only.</p>
+    <input type="password" id="pw" placeholder="admin token" autocomplete="off" style="width:100%">
+    <div id="err"></div>
+    <button id="loginbtn" class="ok" style="width:100%">log in</button>
+  </div>
+</div>
+
+<main id="dash" class="hidden">
+  <section>
+    <h2>Pending requests <span id="pcount"></span></h2>
+    <div id="pending"><p class="note">none — the gate is closed</p></div>
+  </section>
+
+  <section>
+    <h2>Sessions</h2>
+    <div id="sessions"><p class="note">none yet</p></div>
+  </section>
+
+  <section>
+    <h2>Audit trail (last 50)</h2>
+    <table id="audit"><thead>
+      <tr><th>time</th><th>actor</th><th>action</th><th>subject</th><th>detail</th></tr>
+    </thead><tbody></tbody></table>
+  </section>
+</main>
+
+<div id="panicbar" class="hidden">
+  <button class="panic" id="panicbtn">PANIC — kill all access</button>
+</div>
+
+<script>
+"use strict";
+// FARcontrol web console. SECURITY: every dynamic value below is rendered with
+// textContent only — no HTML-string sink anywhere — so a hostile agent_name /
+// reason string cannot execute (XSS is structurally prevented, ADR-0017).
+var $ = function (id) { return document.getElementById(id); };
+var UIHDR = { "X-Far-Ui": "1", "Content-Type": "application/json" };
+
+function el(tag, cls, text) {
+  var n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+}
+
+function fmtRemaining(sec) {
+  if (sec === null || sec === undefined) return "";
+  if (sec <= 0) return "expired";
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return h > 0 ? h + "h" + m + "m" : m + "m";
+}
+
+function fmtTime(ts) {
+  if (!ts) return "";
+  var d = new Date(ts * 1000);
+  return d.toISOString().replace("T", " ").replace(".000Z", " UTC");
+}
+
+function api(path, body) {
+  return fetch(path, {
+    method: body ? "POST" : "GET",
+    headers: UIHDR,
+    credentials: "same-origin",
+    body: body ? JSON.stringify(body) : undefined
+  }).then(function (r) {
+    if (r.status === 401) { showLogin(); throw new Error("unauthorized"); }
+    return r.json();
+  }).catch(function (e) { throw e; });
+}
+
+function showLogin() {
+  $("login").classList.remove("hidden");
+  $("dash").classList.add("hidden");
+  $("panicbar").classList.add("hidden");
+  $("logout").classList.add("hidden");
+}
+
+function showDash() {
+  $("login").classList.add("hidden");
+  $("dash").classList.remove("hidden");
+  $("panicbar").classList.remove("hidden");
+  $("logout").classList.remove("hidden");
+}
+
+// ---------- login ----------
+function doLogin() {
+  $("err").textContent = "";
+  var pw = $("pw").value;
+  fetch("/ui/login", { method: "POST", headers: UIHDR, credentials: "same-origin",
+                       body: JSON.stringify({ password: pw }) })
+    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+    .then(function (res) {
+      if (!res.ok) {
+        $("err").textContent = (res.j && res.j.error && res.j.error.message) || "login failed";
+        return;
+      }
+      $("pw").value = "";
+      showDash();
+      refresh();
+    })
+    .catch(function () { $("err").textContent = "cannot reach the daemon"; });
+}
+
+// ---------- dashboard render ----------
+function renderPending(list) {
+  var host = $("pending");
+  host.textContent = "";
+  $("pcount").textContent = list.length ? "(" + list.length + ")" : "";
+  if (!list.length) { host.appendChild(el("p", "note", "none — the gate is closed")); return; }
+  list.forEach(function (r) {
+    var card = el("div", "card");
+    var row = el("div", "row");
+    var g = el("div", "grow");
+    g.appendChild(el("div", "", r.agent_name)).className = "v";
+    // AG-03: identity is a declaration — the UI must never imply vendor verification.
+    if (r.agent_provider && r.agent_model) {
+      g.appendChild(el("div", "k", r.agent_provider + "/" + r.agent_model + " (declared — not verified)"));
+    }
+    g.appendChild(el("div", "k", r.id + " · wants " + r.requested_hours + "h · " + (r.reason || "no reason")));
+    var sc = el("span", "pill " + (r.scope === "full_access" ? "scope-fa" : "scope-to"), r.scope);
+    var line = el("div", "row");
+    line.appendChild(sc);
+    line.appendChild(el("span", "k", " " + fmtTime(r.created_at)));
+    g.appendChild(line);
+    row.appendChild(g);
+
+    var hours = el("select");
+    [r.requested_hours, 5, 12, 24, 48, 72].forEach(function (h) {
+      var o = el("option", null, h + "h");
+      o.value = h;
+      if (h === r.requested_hours) o.selected = true;
+      hours.appendChild(o);
+    });
+    row.appendChild(el("span", "k", "grant "));
+    row.appendChild(hours);
+
+    var bYes = el("button", "ok", "APPROVE");
+    bYes.onclick = function () {
+      api("/ui/approve", { request_id: r.id, hours: parseFloat(hours.value) })
+        .then(refresh).catch(function () {});
+    };
+    var bNo = el("button", "no", "DENY");
+    bNo.onclick = function () {
+      api("/ui/deny", { request_id: r.id, reason: "denied from web console" })
+        .then(refresh).catch(function () {});
+    };
+    row.appendChild(bYes);
+    row.appendChild(bNo);
+    card.appendChild(row);
+    host.appendChild(card);
+  });
+}
+
+function renderSessions(list) {
+  var host = $("sessions");
+  host.textContent = "";
+  if (!list.length) { host.appendChild(el("p", "note", "none yet")); return; }
+  list.forEach(function (s) {
+    var active = s.effective_status === "active";
+    var card = el("div", "card");
+    var row = el("div", "row");
+    var g = el("div", "grow");
+    var name = el("div", "v", s.agent_name);
+    g.appendChild(name);
+    if (s.agent_provider && s.agent_model) {
+      g.appendChild(el("div", "k", s.agent_provider + "/" + s.agent_model + " (declared — not verified)"));
+    }
+    g.appendChild(el("div", "k", s.id + " · expires " + fmtTime(s.expires_at)));
+    var line = el("div", "row");
+    line.appendChild(el("span", "pill " + (s.scope === "full_access" ? "scope-fa" : "scope-to"), s.scope));
+    line.appendChild(el("span", "pill " + (active ? "st-active" : "st-dead"),
+                        active ? "active · " + fmtRemaining(s.seconds_remaining) : s.effective_status));
+    g.appendChild(line);
+    row.appendChild(g);
+    if (active) {
+      var b = el("button", "no", "REVOKE");
+      b.onclick = function () {
+        api("/ui/revoke", { session_id: s.id, reason: "revoked from web console" })
+          .then(refresh).catch(function () {});
+      };
+      row.appendChild(b);
+    }
+    card.appendChild(row);
+    host.appendChild(card);
+  });
+}
+
+function renderAudit(events) {
+  var tb = $("audit").getElementsByTagName("tbody")[0];
+  tb.textContent = "";
+  events.forEach(function (e) {
+    var tr = el("tr");
+    tr.appendChild(el("td", "k", fmtTime(e.ts)));
+    tr.appendChild(el("td", null, e.actor || ""));
+    tr.appendChild(el("td", null, e.action || ""));
+    tr.appendChild(el("td", "k", e.subject || ""));
+    tr.appendChild(el("td", "k", e.detail || ""));
+    tb.appendChild(tr);
+  });
+}
+
+function refresh() {
+  api("/ui/state").then(function (st) {
+    $("ver").textContent = "v" + st.version;
+    $("meta").textContent =
+      "policy " + (st.policy ? st.policy.session_hours + "h sessions · exec " + st.policy.exec_timeout_s + "s · out " + st.policy.max_output_kib + "KiB · files " + st.policy.max_file_kib + "KiB" : "") +
+      (st.tls ? " · TLS" : " · no TLS");
+    renderPending(st.pending || []);
+    renderSessions(st.sessions || []);
+    renderAudit(st.audit || []);
+  }).catch(function () {});
+}
+
+// ---------- panic ----------
+$("panicbtn").onclick = function () {
+  if (window.confirm("PANIC revokes EVERY session, kills all terminals and rotates the agent token. Continue?")) {
+    api("/ui/panic", { reason: "panic from web console" }).then(refresh).catch(function () {});
+  }
+};
+
+$("loginbtn").onclick = doLogin;
+$("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
+$("logout").onclick = function () {
+  api("/ui/logout", {}).then(showLogin).catch(function () { showLogin(); });
+};
+
+// on load: are we already logged in?
+refresh();
+setInterval(function () {
+  if (!$("dash").classList.contains("hidden")) refresh();
+}, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,226 @@
+=== FARcontrol 1.0.0 FINAL verification — 2026-10-02 13:48:14 UTC ===
+
+--- 1. unit tests (78) ---
+test result: ok. 78 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.21s
+
+--- 2. clippy (0 = clean) ---
+warnings+errors: 0
+
+--- 3. cargo-audit ---
+0 vulnerabilities; 1 allowed note: unmaintained 'serial' (transitive dep of portable-pty)
+audit errors: 0
+
+--- 4. secret scan ---
+secret-scan: CLEAN — no token-shaped blobs in source/tests/docs
+
+--- 5. e2e — full output (32 sections) ---
+=== 0. no-args quick guide ===
+  [PASS] bare 'frtrol' prints quick guide
+=== 1. start with auto-init (zero ceremony: no separate init step) ===
+  [PASS] frtrol start (first run auto-initialized + daemon running)
+  [PASS] agent-token auto-created
+  [PASS] start printed first-run token
+=== 2. unsigned request is rejected (invariant: no valid proof = no access) ===
+  [PASS] unsigned https ping → HTTP 401 (TLS + HMAC both enforce)
+  [PASS] daemon serves HTTPS (rustls)
+=== 3. agent ping (valid HMAC) ===
+  [PASS] "service":"farcontrol"
+=== 4. request A (positional, unquoted reason) + DENY path ===
+  [PASS] positional request created: req_ABjDLhsmzeiNuQZhkqZv2Z
+  [PASS] "status":"pending"
+  [PASS] error:session_not_found
+  [PASS] deny recorded
+  [PASS] "status":"denied"
+=== 5. request B → approve → exec works (terminal_only, no '--' separator) ===
+  [PASS] approved → session ses_HGzTzXjoUBRSh8bD9WKyxc
+  [PASS] "effective_status":"active"
+  [PASS] exec (no --) stdout contains marker
+  [PASS] exit_code=0
+=== 6. scope enforcement (invariant 4: missing capability = denied) ===
+  [PASS] error:scope_denied
+  [PASS] error:scope_denied
+=== 7. policy: denylist + timeout (standard package) ===
+  [PASS] error:policy_denied
+  [PASS] exec timeout enforced
+=== 8. agent self-revoke + revoked = no access ===
+  [PASS] agent self-revoke
+  [PASS] error:session_revoked
+=== 9. full_access: file write (positional + stdin) / read / list + escape rejected ===
+  [PASS] full_access session ses_NRfkRjKmtbsEoVtdsMw9GS
+  [PASS] "written":14
+  [PASS] write via stdin pipe
+  [PASS] piped content roundtrip matches
+  [PASS] file roundtrip content matches
+  [PASS] "name":"e2e-test.txt"
+  [PASS] error:path_outside_root
+  [PASS] error:path_outside_root
+=== 10. owner revoke (admin plane) + revoked = no access ===
+  [PASS] owner revoke
+  [PASS] error:session_revoked
+=== 11. expiry (lazy enforcement) + expired = no access ===
+  [PASS] short session ses_Wdf3n9PjE31sPBvZxsJ7Hy (test mode)
+  [PASS] error:session_expired
+=== 12. audit trail (invariant 8) + hash chain tamper detection ===
+  [PASS] audit: request.created
+  [PASS] audit: request.denied
+  [PASS] audit: session.approved
+  [PASS] audit: exec.run
+  [PASS] audit: exec.denied
+  [PASS] audit: session.revoked
+  [PASS] audit: session.expired
+  [PASS] audit: file.write
+  [PASS] audit: file.read
+  [PASS] audit: auth.rejected
+  [PASS] audit.jsonl exists
+  [PASS] audit lines carry hash chain
+  [PASS] tampered audit.jsonl → doctor FAILS
+=== 13. frtrol doctor (health checks, spec §46) ===
+  [PASS] doctor: ALL GREEN (exit 0)
+=== 14. rate limiting (SE-09): brute-force lockout + recovery ===
+  [PASS] 7 bad tokens → rate_limited (fail closed)
+  [PASS] valid request blocked during lockout
+  [PASS] "service":"farcontrol"
+=== 15. interactive terminal (PTY, ADR-0013) ===
+  [PASS] session for terminal: ses_8WdcxL64QTTs6cB9cS4Yjp
+  [PASS] interactive term: command ran, output streamed back
+  [PASS] session still active after term close
+  [PASS] term session cleaned up (policy: 1 active max)
+=== 16. persistence across daemon restart (fail-closed, state survives) ===
+  [PASS] daemon down → agent fails (fail closed)
+  [PASS] e2e-restart-marker
+  [PASS] e2e-term-marker2
+=== 17. token rotation (old token dies immediately) ===
+  [PASS] token rotated
+  [PASS] old token → invalid_signature
+  [PASS] "service":"farcontrol"
+=== 18. frtrol panic (SE-11): emergency stop kills everything at once ===
+  [PASS] panic executed
+  [PASS] all active sessions revoked
+  [PASS] error:session_revoked
+  [PASS] error:session_revoked
+  [PASS] agent token rotated by panic
+  [PASS] pre-panic token is dead
+  [PASS] terminal on revoked session refused
+=== 19. web UI (v0.3): owner console on the admin plane (ADR-0017) ===
+  [PASS] GET / serves the console shell
+  [PASS] page uses textContent only (no innerHTML/eval — XSS structurally prevented)
+  [PASS] wrong password → 401
+  [PASS] admin token login → 200 + far_ui cookie
+  [PASS] no cookie → 401 (fail closed)
+  [PASS] /ui/state returns dashboard data
+  [PASS] POST without X-Far-Ui header → 403 csrf_blocked
+  [PASS] approved via web UI → session ses_V6bu2hbr68YnRKfBvKB1SK
+  [PASS] ui-approved-marker
+  [PASS] revoked via web UI
+  [PASS] error:session_revoked
+  [PASS] PANIC via web UI revoked sessions
+  [PASS] error:session_revoked
+  [PASS] audit records ui.login / ui.approve / ui.revoke (actor owner:webui)
+  [PASS] after logout the cookie is dead
+=== 20. Full Access adapters (v0.4, Phase 4): process / app / desktop ===
+  [PASS] error:scope_denied
+  [PASS] error:scope_denied
+  [PASS] process list returned
+  [PASS] list flags the frtrol daemon (is_self)
+  [PASS] app launch → pid 10433 (detached)
+  [PASS] launched app is actually running
+  [PASS] process kill → TERM sent
+  [PASS] process died after TERM
+  [PASS] error:kill_refused
+  [PASS] error:kill_refused
+  [PASS] error:policy_denied
+  [PASS] error:desktop_unavailable
+  [PASS] error:desktop_unavailable
+  [PASS] audit records app.launch + process.kill
+=== 21. network chaos (v0.5, §75): garbage over real TLS — daemon must survive ===
+  [PASS] chaos → HTTP 401 (controlled)
+  [PASS] chaos → HTTP 401 (controlled)
+  [PASS] binary garbage → HTTP 401 (controlled)
+  [PASS] 10MB body → 413 JSON envelope (fuzz fix verified on the wire)
+  [PASS] "service":"farcontrol"
+=== 22. backup / restore (v0.6, §72/§103): full cycle, identity survives ===
+  [PASS] backup taken from the running daemon
+  [PASS] archive is non-empty (13775 bytes)
+  [PASS] archive mode 0600 (contains all secrets)
+  [PASS] restore completed
+  [PASS] previous data kept as .bak (never destroyed)
+  [PASS] no re-init after restore (identity preserved)
+  [PASS] "service":"farcontrol"
+  [PASS] audit history restored (pre-backup events present)
+  [PASS] restore refuses while daemon runs (fail closed)
+  [PASS] garbage archive rejected cleanly
+=== 23. observability + crash recovery (v0.7, App B/§73) ===
+  [PASS] GET /healthz → ok (no auth, loopback only)
+  [PASS] GET /readyz → 200 ready
+  [PASS] metrics without token → 401
+  [PASS] GET /admin/metrics → Prometheus exposition
+  [PASS] daemon restarted after SIGKILL
+  [PASS] healthz ok after crash-restart
+  [PASS] crash-recovery-marker
+  [PASS] state (session + audit) survived the crash
+=== 24. agent identity catalog (v0.8, ADR-0022 / spec §9 §11 §81) ===
+  [PASS] request with declared identity accepted
+  [PASS] request JSON carries agent {provider, model} (§11)
+  [PASS] frtrol list shows declared identity
+  [PASS] approved session carries the identity (UI-04)
+  [PASS] unknown provider rejected: invalid_agent_identity
+  [PASS] provider-without-model rejected (§11 both-or-none)
+  [PASS] cross-provider model rejected
+  [PASS] identity error is metadata-only (AG-05/AG-06 style)
+=== 25. CLI exit codes (§66, ADR-0022) — stable 0–7 contract ===
+  [PASS] invalid scope → exit 2
+  [PASS] bad token → exit 3 (auth)
+  [PASS] scope_denied → exit 4 (authorization)
+  [PASS] exec timeout → exit 5
+  [PASS] connection refused → exit 6 (unavailable, fail closed)
+  [PASS] session_limit → exit 7 (conflict)
+  [PASS] ping → exit 0
+=== 26. --json stable output (§45, CL-02) ===
+  [PASS] status --json is valid JSON
+  [PASS] status --json shape stable (service field)
+  [PASS] list --json is valid JSON
+  [PASS] list --json = {requests, sessions} (§45)
+=== 27. protocol version (§44, AU-06): X-Far-Proto fail-closed ===
+  [PASS] X-Far-Proto: 2 → 422 unsupported_proto (bad-request family)
+  [PASS] X-Far-Proto: 1 passes the version gate (then normal auth)
+  [PASS] absent header = FAR-PROTO/1 (0.x clients stay compatible)
+=== 28. audit retention (v0.8, AD-08/ADR-0022) — opt-in, audited, verifiable ===
+  [PASS] daemon restarted with [audit] max_events=5
+  [PASS] audit.jsonl bounded (≤ marker + 5 events): 6 lines
+  [PASS] the trim itself is audited (audit.trimmed marker)
+  [PASS] doctor reports the retention config
+  [PASS] doctor ALL GREEN with retention active (chain still verifiable)
+=== 29. progressive auth backoff (v0.9, SC-01/ADR-0023): hammering extends the lock ===
+  [PASS] locked out with progressive backoff (retry in 4s)
+  [PASS] hammering EXTENDS the lock (4s → 8s, exponential)
+  [PASS] valid token also blocked while locked (fail closed)
+  [PASS] "service":"farcontrol"
+  [PASS] auth.backoff audited (escalation evidence)
+=== 30. startup config validation (v0.9, SC-02/ADR-0023): fail fast, exit 2 ===
+  [PASS] bad config rejected: admin_bind non-loopback (exit 2)
+  [PASS] bad config rejected: session_min_hours negative (exit 2)
+  [PASS] bad config rejected: pending_ttl_secs zero (exit 2)
+  [PASS] bad config rejected: bad secret_store (exit 2)
+  [PASS] bad config rejected: negative audit max_events (exit 2)
+  [PASS] no state created on rejected configs (fail before init)
+  [PASS] valid custom config still passes validation
+=== 31. OS keyring secret store (v0.9, ID-04/ADR-0023): never on disk — or fail-closed refusal ===
+  [PASS] keyring mode REFUSED in env without a usable kernel keyring (exit 2, fail closed)
+  [PASS] no state created (no half-initialized keyring dir)
+  NOTE: full keyring path runs on real Linux kernels — this sandbox has a
+=== 32. emergency stop under stress (§97-14, v1.0/ADR-0024): panic with work in flight ===
+  [PASS] panic executed under load
+  [PASS] active session revoked mid-flight
+  [PASS] live terminal killed mid-flight
+  [PASS] in-flight commands did not orphan (bounded by their timeouts)
+  [PASS] post-panic exec on the revoked session → exit 4
+  [PASS] panic rotated the token (fresh credential issued)
+  [PASS] new request flow works after panic (new token)
+  [PASS] e2e-fresh-marker
+  [PASS] healthz 200 after the storm
+  [PASS] doctor ALL GREEN after the storm
+  [PASS] the stop itself is audited (invariant 8)
+=== RESULT ===
+  passed: 172
+  failed: 0
+  ALL GREEN — FARcontrol 1.0.0 e2e verification PASSED (+stress panic; 0.9: backoff/validation/keyring; 0.8: catalog/exits/json/proto/retention)

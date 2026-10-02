@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+
+      - name: clippy (zero warnings enforced)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: unit tests (includes the in-process fuzz suite)
+        run: cargo test
+
+      - name: build release binary
+        run: cargo build --release
+
+      - name: end-to-end verification (the full wall)
+        run: bash scripts/e2e.sh
+
+      - name: secret scan
+        run: bash scripts/secret-scan.sh
+
+      - name: cargo audit (vulnerabilities fail; unmaintained deps are reported)
+        run: |
+          cargo install cargo-audit --locked || true
+          cargo audit
+
+      - name: SBOM
+        run: bash scripts/sbom.sh
