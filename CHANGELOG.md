@@ -1,8 +1,72 @@
 # Changelog
 
 All notable changes to FARcontrol. Versions 0.1.0 → 0.8.0 were internal engineering
-milestones (never published as releases, per owner decision D-042); **v1.0.0 is the one
-and only published release.** Dates are 2026-10-02 (UTC).
+milestones (never published as releases, per owner decision D-042); **v1.0.0 and v1.1.0
+are the published releases.** Dates are 2026-10-02 (UTC).
+
+## [1.1.0] — 2026-10-02
+
+**Device authentication: the agent now needs exactly two things.** Owner instruction:
+"yang diperlukan agent itu cuman ID device dan passwordnya" — plus an enterprise-grade
+CLI and a total console redesign. Verified as one wall: **104 unit tests + 231 e2e
+checks + 9 mutation checks, clippy 0, cargo-audit 0 CVEs, secret-scan clean, SPDX SBOM
+(239 crates), browser-tested console, VLM design review 8/10.**
+
+### Added
+- **Device registry (ADR-0025):** `frtrol device add/list/lock/unlock/passwd/remove`.
+  Each device gets a `FAR-XXXX-XXXX` id (Crockford base32 + check char — single typos
+  are caught client-side) and an auto-generated password (5 words from a 1024-word list
+  + 2 digits ≈ 56.6 bits). Login exchanges the password for a 256-bit per-device signing
+  key, rotated on **every** login — a stolen key cannot survive the next legitimate
+  login.
+- **Login endpoint** `POST /v1/auth/login`: Argon2id (m=64 MiB, t=3, p=1 — above the
+  OWASP floor), per-device progressive backoff, timing-equalized rejection (no
+  user-enumeration oracle), audited `auth.login` / `auth.login_failed`.
+- **Fingerprint TOFU (SSH-style):** `frtrol agent login` captures the daemon cert on
+  first connect, prints its SHA-256 fingerprint, and pins it (known_hosts analog).
+  `--expect-fp` verifies strictly — a mismatch aborts **before** the password is sent.
+  Owner side: `frtrol fingerprint`.
+- **Legacy v1.0 migration:** existing agent-tokens become a key-only `legacy` device at
+  daemon start — v1.0 agent binaries keep working unchanged, headerless requests
+  resolve to the legacy device, fresh installs reject them (fail closed).
+- **Per-device request binding:** requests/sessions/audit events record the device id;
+  `device lock` revokes that device's sessions in the same command.
+- **CLI v2 (ADR-0026, gh-style):** comfy-table tables, colorblind-safe status glyphs,
+  humanized durations (`4h 51m left`), dim `tip:` hints, informative empty states,
+  receipt lines, `--json` on every command (global flag), NO_COLOR + pipe-safe output.
+- **Web console v2 (ADR-0027):** total redesign — dark sidebar cockpit (Dashboard /
+  Sessions / Devices / Audit / Danger), KPI cards, live countdowns, device panel with
+  copy-to-clipboard secrets, searchable audit + hash-chain status chip, panic confirm
+  modal. Still one dependency-free file, textContent-only, no CDN, same CSRF/cookie
+  model. New `/ui/device/*` endpoints (cookie + CSRF, same state-layer code path).
+- **Metrics:** `farcontrol_devices` gauge; per-principal lockout metrics.
+
+### Changed
+- `frtrol panic` rotates **every** device key (was: single agent token).
+- `frtrol rotate` maps to the legacy device; devices use `device passwd`.
+- Backup/restore: file mode carries device keys in `state.db`; keyring-mode archives
+  materialize the key map as `device-keys.json` (validated on restore). `agent-token`
+  in archives is a tolerated v1.0 artifact; restore of a fresh 1.1 archive no longer
+  requires it.
+- Doctor: v1.1 checks (admin-token perms, devices-with-keys, keyring map, schema v4).
+- e2e grew from 172 to **231 checks** (new §33–39: device lifecycle, login backoff,
+  TOFU strict/mismatch, legacy migration, --json schemas, console v2 flows, output
+  contract).
+
+### Fixed (found by our own tests — the discipline working)
+- **Deadlock** in the device-auth verify path (mutex re-acquired on the same thread)
+  and **five more** in the new web console handlers — found by the e2e + curl probes.
+- **Unthrottled rejection path:** headerless/unknown-device floods now hit the rate
+  brake *before* rejection (v1.1 hardening during e2e).
+- Doctor no longer fails on fresh 1.1 installs (agent-token is optional legacy).
+- Missing-header/invalid-timestamp rejections are now audited (invariant 8).
+
+### Security
+- Argon2id at m=64 MiB/t=3/p=1 for password hashing (login endpoint only).
+- Per-principal progressive lockout: one attacked device never locks out the others;
+  the seconds-scale global burst brake stays (documented fail-closed trade-off).
+- Login rotates the device key on success; `device passwd` rotates password + key;
+  `device lock` revokes sessions + key + login in one step.
 
 ## [1.0.0] — 2026-10-02
 

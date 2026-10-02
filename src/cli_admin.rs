@@ -62,18 +62,18 @@ pub fn init_quiet(data_dir: &Path) -> anyhow::Result<bool> {
     }
 
     let conn = state::open_db(&data_dir.join("state.db"))?;
-    let agent_token = crypto::gen_token();
+    // v1.1 (ADR-0025): fresh installs create NO agent token — the owner
+    // registers a device (`frtrol device add`) and hands the agent only
+    // the device id + password. Legacy tokens migrate at daemon start.
     let admin_token = crypto::gen_token();
     if keyring_mode {
-        // ID-04 (ADR-0023): the agent secret lives in the kernel keyring only —
-        // no plaintext file, no agent_token meta row in SQLite.
-        crate::keyring::store(data_dir, &agent_token)
+        // ID-04 (ADR-0023): device keys live in the kernel keyring only —
+        // seeded as an empty map; no plaintext anywhere.
+        crate::keyring::store(data_dir, "{}")
             .with_context(|| "kernel keyring store failed (secret_store=keyring)")?;
         state::set_meta(&conn, "secret_store", "keyring")?;
     } else {
-        state::set_meta(&conn, "agent_token", &agent_token)?;
         state::set_meta(&conn, "secret_store", "file")?;
-        crate::server::write_secret(&data_dir.join("agent-token"), &agent_token)?;
     }
     state::set_meta(&conn, "admin_token", &admin_token)?;
     state::set_meta(&conn, "schema_version", "1")?;
@@ -85,13 +85,14 @@ pub fn init_quiet(data_dir: &Path) -> anyhow::Result<bool> {
     let _ = crate::tls::ensure_cert(data_dir)?;
 
     println!("initialized {} (first run)", data_dir.display());
-    println!("AGENT TOKEN — give this to your AI agent (shown once):");
-    println!("  {}", agent_token);
-    if keyring_mode {
-        println!("(stored in the Linux kernel keyring — never written to disk)");
-    } else {
-        println!("(stored in agent-token file, mode 0600)");
-    }
+    println!();
+    println!("next step — register a device for your AI agent:");
+    println!("  frtrol device add <name>");
+    println!("  → prints a device id (FAR-XXXX-XXXX) + password (shown once)");
+    println!("  → the agent logs in with just those two: frtrol agent login <device-id>");
+    println!();
+    println!("admin token (web console login — stored in admin-token, mode 0600):");
+    println!("  {admin_token}");
     println!();
     Ok(true)
 }
@@ -182,27 +183,32 @@ fn iso(ts: i64) -> String {
         .unwrap_or_else(|| ts.to_string())
 }
 
-fn hum(secs: i64) -> String {
-    if secs <= 0 {
-        "expired".into()
-    } else if secs < 3600 {
-        format!("{}m", (secs + 59) / 60)
-    } else {
-        format!("{}h{}m", secs / 3600, (secs % 3600) / 60)
-    }
-}
-
 pub fn status(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     let v = a.get("/admin/ping")?;
+    let devs = a.get("/admin/devices")?;
     if as_json {
-        // §45 (CL-02): stable machine-readable output — one line, unchanged payload.
-        println!("{}", serde_json::to_string(&v)?);
+        // §45 (CL-02) + ADR-0026: stable machine output, one line, additive schema.
+        println!("{}", serde_json::to_string(&json!({
+            "service": "farcontrol",
+            "version": v["version"],
+            "daemon": true,
+            "pending_count": v["pending_count"],
+            "active_count": v["active_count"],
+            "devices": devs["count"],
+            "uptime_secs": v["uptime_secs"],
+        }))?);
         return Ok(());
     }
-    println!("daemon  : running (v{})", v["version"].as_str().unwrap_or("?"));
-    println!("pending : {}", v["pending_count"].as_i64().unwrap_or(0));
-    println!("active  : {}", v["active_count"].as_i64().unwrap_or(0));
+    crate::out::section(&format!("FARcontrol {} — daemon up", v["version"].as_str().unwrap_or("?")));
+    let uptime = v["uptime_secs"].as_i64().unwrap_or(0);
+    crate::out::dim(&format!("{} up, {} pending · {} active session(s) · {} device(s)",
+        crate::out::humanize(uptime),
+        v["pending_count"].as_i64().unwrap_or(0),
+        v["active_count"].as_i64().unwrap_or(0),
+        devs["count"].as_i64().unwrap_or(0),
+    ));
+    crate::out::hint("frtrol list shows every pending request and session");
     Ok(())
 }
 
@@ -216,51 +222,78 @@ pub fn list(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("PENDING REQUESTS (frtrol approve <id>  /  frtrol deny <id>):");
-    let empty = reqs["requests"].as_array().map(|r| r.is_empty()).unwrap_or(true);
-    if empty {
-        println!("  (none)");
+    crate::out::section("Pending requests");
+    let pending = reqs["requests"].as_array().cloned().unwrap_or_default();
+    if pending.is_empty() {
+        crate::out::empty("no pending requests — nothing is waiting on you.");
     } else {
-        for r in reqs["requests"].as_array().unwrap() {
-            let identity = match (r["agent_provider"].as_str(), r["agent_model"].as_str()) {
-                (Some(p), Some(m)) => format!(" {p}/{m} (declared)"),
-                _ => String::new(),
-            };
-            println!(
-                "  {}  agent={}{} scope={} hours={} reason='{}'",
-                r["id"].as_str().unwrap_or("?"),
-                r["agent_name"].as_str().unwrap_or("?"),
-                identity,
-                r["scope"].as_str().unwrap_or("?"),
-                r["requested_hours"].as_f64().unwrap_or(0.0),
-                r["reason"].as_str().unwrap_or(""),
-            );
-        }
+        let rows: Vec<Vec<String>> = pending
+            .iter()
+            .map(|r| {
+                // AGENT cell carries the declared identity when present (§11)
+                let mut agent_cell = r["agent_name"].as_str().unwrap_or("?").to_string();
+                if let (Some(p), Some(m)) = (r["agent_provider"].as_str(), r["agent_model"].as_str()) {
+                    agent_cell.push_str(&format!("\n{p}/{m}"));
+                }
+                vec![
+                    r["id"].as_str().unwrap_or("?").into(),
+                    agent_cell,
+                    r["scope"].as_str().unwrap_or("?").into(),
+                    format!("{:.1}h", r["requested_hours"].as_f64().unwrap_or(0.0)),
+                    crate::out::ago(r["created_at"].as_i64()),
+                    crate::out::trunc(r["reason"].as_str().unwrap_or(""), 30),
+                    r["device_id"].as_str().unwrap_or("legacy").into(),
+                ]
+            })
+            .collect();
+        println!("{}", crate::out::table(&["ID", "AGENT", "SCOPE", "ASKED", "WAITING", "REASON", "DEVICE"], &rows));
+        let first_id = pending[0]["id"].as_str().unwrap_or("?");
+        crate::out::hint(&format!("frtrol approve {first_id} — optional hours shortens it · frtrol deny {first_id}"));
     }
     println!();
-    println!("SESSIONS:");
-    let empty_s = sess["sessions"].as_array().map(|r| r.is_empty()).unwrap_or(true);
-    if empty_s {
-        println!("  (none)");
+    crate::out::section("Sessions");
+    let sessions = sess["sessions"].as_array().cloned().unwrap_or_default();
+    if sessions.is_empty() {
+        crate::out::empty("no sessions yet — agents get access only after you approve.");
     } else {
         let now = state::now();
-        for s in sess["sessions"].as_array().unwrap() {
-            let eff = s["effective_status"].as_str().unwrap_or("?");
-            let remaining = s["expires_at"].as_i64().unwrap_or(0) - now;
-            let identity = match (s["agent_provider"].as_str(), s["agent_model"].as_str()) {
-                (Some(p), Some(m)) => format!(" {p}/{m} (declared)"),
-                _ => String::new(),
-            };
-            println!(
-                "  {}  agent={}{} scope={} status={} expires={} ({})",
-                s["id"].as_str().unwrap_or("?"),
-                s["agent_name"].as_str().unwrap_or("?"),
-                identity,
-                s["scope"].as_str().unwrap_or("?"),
-                eff,
-                iso(s["expires_at"].as_i64().unwrap_or(0)),
-                if eff == "active" { hum(remaining) } else { eff.to_string() },
-            );
+        let rows: Vec<Vec<String>> = sessions
+            .iter()
+            .map(|s| {
+                let eff = s["effective_status"].as_str().unwrap_or("?");
+                let dot = match eff {
+                    "active" => {
+                        let remaining = s["expires_at"].as_i64().unwrap_or(0) - now;
+                        if remaining < 3600 {
+                            format!("{} {} left", crate::out::dot(crate::out::Dot::Warn), crate::out::humanize(remaining))
+                        } else {
+                            format!("{} {} left", crate::out::dot(crate::out::Dot::Active), crate::out::humanize(remaining))
+                        }
+                    }
+                    "expired" => crate::out::dot(crate::out::Dot::Dead2),
+                    "revoked" => crate::out::dot(crate::out::Dot::Revoked),
+                    other => other.to_string(),
+                };
+                let mut agent_cell = s["agent_name"].as_str().unwrap_or("?").to_string();
+                if let (Some(p), Some(m)) = (s["agent_provider"].as_str(), s["agent_model"].as_str()) {
+                    agent_cell.push_str(&format!("\n{p}/{m}"));
+                }
+                vec![
+                    s["id"].as_str().unwrap_or("?").into(),
+                    agent_cell,
+                    s["scope"].as_str().unwrap_or("?").into(),
+                    dot,
+                    s["device_id"].as_str().unwrap_or("legacy").into(),
+                    iso(s["expires_at"].as_i64().unwrap_or(0)),
+                ]
+            })
+            .collect();
+        println!("{}", crate::out::table(&["ID", "AGENT", "SCOPE", "STATE", "DEVICE", "EXPIRES"], &rows));
+        for s in &sessions {
+            if s["effective_status"] == "active" {
+                crate::out::hint(&format!("frtrol revoke {} — access dies immediately", s["id"].as_str().unwrap_or("?")));
+                break;
+            }
         }
     }
     Ok(())
@@ -274,70 +307,194 @@ pub fn approve(data_dir: &Path, id: &str, hours: Option<f64>) -> anyhow::Result<
     }
     let v = a.post("/admin/approve", &body)?;
     let s = &v["session"];
-    println!("approved request {}", id);
-    println!("  session_id : {}", s["id"].as_str().unwrap_or("?"));
-    println!("  agent      : {}", s["agent_name"].as_str().unwrap_or("?"));
-    println!("  scope      : {}", s["scope"].as_str().unwrap_or("?"));
-    println!("  expires    : {}", iso(s["expires_at"].as_i64().unwrap_or(0)));
     let sid = s["id"].as_str().unwrap_or("?");
-    println!("agent can now run: frtrol agent exec {sid} <command>");
+    let scope = s["scope"].as_str().unwrap_or("?");
+    // session payloads carry expires_at (authoritative) — derive the duration
+    let left = s["expires_at"].as_i64().unwrap_or(0) - state::now();
+    let dev = s["device_id"].as_str().unwrap_or("legacy");
+    crate::out::ok_receipt(&format!("approved {id} → {sid} ({}, {scope}, device {dev})", crate::out::humanize(left.max(0))));
+    crate::out::hint(&format!("agent runs commands: frtrol agent exec {sid} <command>"));
     Ok(())
 }
 
 pub fn deny(data_dir: &Path, id: &str, reason: &str) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     let v = a.post("/admin/deny", &json!({ "request_id": id, "reason": reason }))?;
-    println!("denied request {} — no session was created", v["request"]["id"].as_str().unwrap_or(id));
+    crate::out::err_receipt(&format!("denied {} — no session was created", v["request"]["id"].as_str().unwrap_or(id)));
     Ok(())
 }
 
 pub fn revoke(data_dir: &Path, id: &str, reason: &str) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     a.post("/admin/revoke", &json!({ "session_id": id, "reason": reason }))?;
-    println!("revoked session {id} — access is dead immediately");
+    crate::out::err_receipt(&format!("revoked {id} — access died immediately"));
     Ok(())
 }
 
 pub fn rotate(data_dir: &Path) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     let v = a.post("/admin/rotate", &json!({}))?;
-    println!("NEW agent token (old one is dead — update the agent NOW):");
+    println!("NEW legacy-device key (old one is dead — update the v1.0 agent NOW):");
     println!("  {}", v["agent_token"].as_str().unwrap_or("?"));
     Ok(())
 }
 
-pub fn audit(data_dir: &Path, limit: u32) -> anyhow::Result<()> {
+// ============================================================
+// v1.1 (ADR-0025 §5): device management — via the admin plane like every
+// other owner decision (ADR-0006: the CLI never opens the DB directly).
+// ============================================================
+
+pub fn device_add(data_dir: &Path, name: &str) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
-    let v = a.get(&format!("/admin/audit?limit={}", limit.min(1000)))?;
-    if let Some(events) = v["events"].as_array() {
-        for e in events.iter() {
-            println!(
-                "{}  {:<18} {:<18} {} {}",
-                iso(e["ts"].as_i64().unwrap_or(0)),
-                e["actor"].as_str().unwrap_or("?"),
-                e["action"].as_str().unwrap_or("?"),
-                e["subject"].as_str().unwrap_or(""),
-                e["detail"].as_str().map(|s| s.to_string()).unwrap_or_default(),
-            );
-        }
-        if events.is_empty() {
-            println!("(no audit events)");
-        }
+    let v = a.post("/admin/devices/add", &json!({ "name": name }))?;
+    let id = v["device_id"].as_str().unwrap_or("?");
+    let password = v["password"].as_str().unwrap_or("?");
+    println!("✓ device created — {id} \"{name}\"");
+    println!();
+    println!("DEVICE PASSWORD (shown once — store it now):");
+    println!("  {password}");
+    println!();
+    println!("The agent needs ONLY two things:");
+    println!("  device id : {id}");
+    println!("  password  : (the line above)");
+    println!();
+    println!("Agent onboarding (on the agent machine):");
+    println!("  frtrol agent login {id}        # password prompted, or FARCONTROL_PASSWORD=… ");
+    Ok(())
+}
+
+pub fn device_list(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    let v = a.get("/admin/devices")?;
+    if as_json {
+        println!("{}", serde_json::to_string(&v)?);
+        return Ok(());
+    }
+    let devices = v["devices"].as_array().cloned().unwrap_or_default();
+    crate::out::section("Devices");
+    if devices.is_empty() {
+        crate::out::empty("no devices registered — add one: frtrol device add <name>");
+        return Ok(());
+    }
+    let rows: Vec<Vec<String>> = devices
+        .iter()
+        .map(|d| {
+            let status = if d["key_only"].as_bool().unwrap_or(false) {
+                format!("{} key-only", crate::out::dot(crate::out::Dot::Dead))
+            } else if d["login_enabled"].as_bool().unwrap_or(false) {
+                crate::out::dot(crate::out::Dot::Active)
+            } else {
+                crate::out::dot(crate::out::Dot::Locked)
+            };
+            vec![
+                d["id"].as_str().unwrap_or("?").into(),
+                crate::out::trunc(d["name"].as_str().unwrap_or("?"), 18),
+                status,
+                crate::out::ago(d["last_seen"].as_i64()),
+                d["active_sessions"].as_i64().unwrap_or(0).to_string(),
+            ]
+        })
+        .collect();
+    println!("{}", crate::out::table(&["ID", "NAME", "STATUS", "LAST SEEN", "SESSIONS"], &rows));
+    crate::out::hint("frtrol device passwd <id> rotates its password · lock/unlock gates its login");
+    Ok(())
+}
+
+pub fn device_lock(data_dir: &Path, id: &str) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    let v = a.post("/admin/devices/lock", &json!({ "id": id }))?;
+    let n = v["revoked_sessions"].as_array().map(|s| s.len()).unwrap_or(0);
+    println!("✓ device {id} LOCKED — login disabled, key rotated, {n} session(s) revoked");
+    Ok(())
+}
+
+pub fn device_unlock(data_dir: &Path, id: &str) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    a.post("/admin/devices/unlock", &json!({ "id": id }))?;
+    println!("✓ device {id} unlocked — login re-enabled (password unchanged)");
+    Ok(())
+}
+
+pub fn device_passwd(data_dir: &Path, id: &str) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    let v = a.post("/admin/devices/passwd", &json!({ "id": id }))?;
+    println!("✓ device {id} — password + key rotated (the old key is dead)");
+    println!();
+    println!("NEW DEVICE PASSWORD (shown once):");
+    println!("  {}", v["password"].as_str().unwrap_or("?"));
+    println!();
+    println!("The device must re-login: frtrol agent login {id}");
+    Ok(())
+}
+
+pub fn device_remove(data_dir: &Path, id: &str) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    let v = a.post("/admin/devices/remove", &json!({ "id": id }))?;
+    let n = v["revoked_sessions"].as_array().map(|s| s.len()).unwrap_or(0);
+    println!("✗ device {id} removed — key destroyed, {n} session(s) revoked");
+    Ok(())
+}
+
+/// v1.1 (ADR-0025 §4): owner-side cert fingerprint — compare with what the
+/// agent shows at `frtrol agent login` (out-of-band TOFU verification).
+pub fn fingerprint(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
+    let pem = std::fs::read_to_string(data_dir.join("cert.pem"))
+        .with_context(|| "cert.pem missing — run 'frtrol start' once (auto-generates it)")?;
+    let fp = crate::tls::pem_first_block(&pem, "CERTIFICATE")
+        .map(|der| crate::crypto::cert_fingerprint(&der))
+        .context("cert.pem carries no CERTIFICATE block — regenerate it (delete cert.pem + restart)");
+    if as_json {
+        println!("{}", json!({ "fingerprint": fp? }));
+    } else {
+        crate::out::section("Daemon certificate fingerprint");
+        println!("  {}", fp?);
+        crate::out::hint("compare with the 'server fingerprint:' line the agent prints at login");
     }
     Ok(())
 }
 
+pub fn audit(data_dir: &Path, limit: u32, as_json: bool) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    let v = a.get(&format!("/admin/audit?limit={}", limit.min(1000)))?;
+    let events = v["events"].as_array().cloned().unwrap_or_default();
+    if as_json {
+        println!("{}", serde_json::to_string(&json!({ "events": events, "count": events.len() }))?);
+        return Ok(());
+    }
+    crate::out::section(&format!("Audit — last {} event(s)", events.len()));
+    if events.is_empty() {
+        crate::out::empty("no audit events yet.");
+        return Ok(());
+    }
+    let rows: Vec<Vec<String>> = events
+        .iter()
+        .map(|e| {
+            vec![
+                iso(e["ts"].as_i64().unwrap_or(0)),
+                crate::out::trunc(e["actor"].as_str().unwrap_or("?"), 24),
+                crate::out::trunc(e["action"].as_str().unwrap_or("?"), 26),
+                e["subject"].as_str().unwrap_or("").to_string(),
+            ]
+        })
+        .collect();
+    println!("{}", crate::out::table(&["TIME", "ACTOR", "ACTION", "SUBJECT"], &rows));
+    crate::out::hint("full detail (JSON fields) — frtrol audit --json");
+    Ok(())
+}
+
 /// EMERGENCY STOP (SE-11): one call — every session revoked, every pending
-/// request expired, every terminal killed, agent token rotated.
+/// request expired, every terminal killed, every device key rotated (ADR-0025 §5).
 pub fn panic_stop(data_dir: &Path, reason: &str) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     let v = a.post("/admin/panic", &json!({ "reason": reason }))?;
     println!("PANIC executed:");
-    println!("  revoked sessions : {}", v["revoked_sessions"].as_i64().unwrap_or(0));
-    println!("  expired pending  : {}", v["expired_pending"].as_i64().unwrap_or(0));
-    println!("  killed terminals : {}", v["killed_terminals"].as_i64().unwrap_or(0));
-    println!("NEW agent token (old one is DEAD):");
-    println!("  {}", v["agent_token"].as_str().unwrap_or("?"));
+    println!("  revoked sessions   : {}", v["revoked_sessions"].as_i64().unwrap_or(0));
+    println!("  expired pending    : {}", v["expired_pending"].as_i64().unwrap_or(0));
+    println!("  killed terminals   : {}", v["killed_terminals"].as_i64().unwrap_or(0));
+    println!("  device keys rotated: {}", v["rotated_device_keys"].as_i64().unwrap_or(0));
+    println!();
+    println!("Every device key is dead — agents must re-login (device id + password).");
+    println!("Trust a device again: frtrol device passwd <FAR-XXXX-XXXX> → hand out the new password.");
     Ok(())
 }
 
@@ -374,27 +531,35 @@ pub fn doctor(data_dir: &Path) -> anyhow::Result<i32> {
             .unwrap_or(false);
     check("config", cfg_ok, "config.toml parses and validates", "fix the config.toml values shown by 'frtrol start' (config_invalid: ...)");
 
-    // v0.9 (ADR-0023): secret-store checks replace the unconditional file check.
+    // v0.9→v1.1 (ADR-0023/0025): secret-store checks. File mode keys live in
+    // the devices table (state.db) — admin-token is the only secret FILE the
+    // owner box must keep 0600 (agent-token is a v1.0 leftover, tolerated).
     let keyring_mode = parsed.as_ref().map(|c| c.keyring_mode()).unwrap_or(false);
     if keyring_mode {
         let readable = crate::keyring::load(data_dir).ok().flatten().is_some();
-        let stray = data_dir.join("agent-token").exists();
+        let stray = data_dir.join("agent-token").exists() || data_dir.join("device-keys.json").exists();
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             let adm_ok = std::fs::metadata(data_dir.join("admin-token")).map(|m| (m.mode() & 0o777) == 0o600).unwrap_or(false);
             let s_ok = readable && !stray && adm_ok;
-            check("secret_store", s_ok, "kernel keyring holds the agent token (admin-token 0600, no plaintext agent-token)", "if key missing: frtrol rotate or re-init; if stray file: rm agent-token");
+            check("secret_store", s_ok, "kernel keyring holds the device keys (admin-token 0600, no plaintext key files)", "if key missing: frtrol device passwd or re-init; if stray file: rm it");
         }
     } else {
         #[cfg(unix)]
         {
             use std::os::unix::fs::MetadataExt;
             let mode_ok = |p: &std::path::Path| std::fs::metadata(p).map(|m| (m.mode() & 0o777) == 0o600).unwrap_or(false);
-            let tok = data_dir.join("agent-token");
             let adm = data_dir.join("admin-token");
-            let t_ok = mode_ok(&tok) && mode_ok(&adm);
-            check("token_perms", t_ok, "agent-token + admin-token mode 0600", "chmod 600 the token files");
+            let t_ok = mode_ok(&adm);
+            check("token_perms", t_ok, "admin-token mode 0600 (device keys live in state.db)", "chmod 600 admin-token");
+        }
+        // v1.1: the devices table must exist and carry keys for its rows.
+        if let Ok(conn) = state::open_db(&data_dir.join("state.db")) {
+            let n = state::count_devices(&conn);
+            let broken = state::device_list(&conn).iter().filter(|d| d.device_key.as_deref().unwrap_or("").is_empty() && d.password_hash.is_some()).count();
+            let detail = format!("{n} device(s) registered, all with keys");
+            check("devices", broken == 0, &detail, "re-init or restore a valid backup");
         }
     }
 
@@ -470,9 +635,9 @@ pub fn backup(data_dir: &Path, out_path: &Path) -> anyhow::Result<()> {
 
 /// Files a valid archive may contain — anything else (paths, ../, dirs) is
 /// rejected before extraction. Path-traversal-proof by allowlist.
-const RESTORE_ALLOW: [&str; 9] = [
+const RESTORE_ALLOW: [&str; 10] = [
     "state.db", "state.db-wal", "state.db-shm", "config.toml",
-    "agent-token", "admin-token", "audit.jsonl", "cert.pem", "key.pem",
+    "agent-token", "admin-token", "audit.jsonl", "cert.pem", "key.pem", "device-keys.json",
 ];
 
 /// Offline restore: daemon MUST be down. Validate → extract to temp → verify
@@ -503,7 +668,7 @@ pub fn restore(data_dir: &Path, archive: &Path) -> anyhow::Result<()> {
             anyhow::bail!("archive contains '{}' — not a known FARcontrol state file (refusing: possible path traversal)", e);
         }
     }
-    for must in ["state.db", "config.toml", "agent-token", "admin-token"] {
+    for must in ["state.db", "config.toml", "admin-token"] {
         if !entries.iter().any(|e| e == must) {
             anyhow::bail!("archive is missing required file '{must}' — not a complete backup");
         }
@@ -538,10 +703,21 @@ pub fn restore(data_dir: &Path, archive: &Path) -> anyhow::Result<()> {
             let _ = std::fs::remove_dir_all(&tmp);
             anyhow::bail!("restored db has no schema_version — archive rejected");
         }
-        let tok = std::fs::read_to_string(tmp.join("agent-token")).context("restored agent-token unreadable")?;
-        if tok.trim().is_empty() {
-            let _ = std::fs::remove_dir_all(&tmp);
-            anyhow::bail!("restored agent-token is empty — archive rejected");
+        // v1.1: agent-token is a v1.0-era artifact (optional); device keys live
+        // in state.db (file mode) or device-keys.json (keyring archive).
+        if tmp.join("agent-token").exists() {
+            let tok = std::fs::read_to_string(tmp.join("agent-token")).context("restored agent-token unreadable")?;
+            if tok.trim().is_empty() {
+                let _ = std::fs::remove_dir_all(&tmp);
+                anyhow::bail!("restored agent-token is empty — archive rejected");
+            }
+        }
+        if tmp.join("device-keys.json").exists() {
+            let map = std::fs::read_to_string(tmp.join("device-keys.json")).context("restored device-keys.json unreadable")?;
+            if state::parse_key_payload(&map).is_empty() {
+                let _ = std::fs::remove_dir_all(&tmp);
+                anyhow::bail!("restored device-keys.json is not a key map — archive rejected");
+            }
         }
     }
     set_dir_private(&tmp);
@@ -560,20 +736,30 @@ pub fn restore(data_dir: &Path, archive: &Path) -> anyhow::Result<()> {
         let conn = state::open_db(&data_dir.join("state.db"))?;
         state::set_meta(&conn, "restored_at", &state::now().to_string())?;
     }
-    // 7. v0.9 (ADR-0023): converge to the restored config's secret store. In
-    //    keyring mode the archive's plaintext agent-token is written back into
-    //    the kernel keyring and the file removed — disk never keeps it.
+    // 7. v0.9→v1.1 (ADR-0023/0025): converge to the restored config's secret
+    //    store. Keyring mode: write the key material back into the kernel and
+    //    remove the plaintext (v1.1 maps via device-keys.json; v1.0 archives
+    //    carry a bare agent-token → wrapped as the legacy key).
     {
         let cfg: Config = toml::from_str(&std::fs::read_to_string(data_dir.join("config.toml"))?)?;
         if cfg.keyring_mode() {
-            let tok = std::fs::read_to_string(data_dir.join("agent-token"))?.trim().to_string();
-            crate::keyring::store(data_dir, &tok)?;
+            let payload = if data_dir.join("device-keys.json").exists() {
+                std::fs::read_to_string(data_dir.join("device-keys.json"))?.trim().to_string()
+            } else {
+                let tok = std::fs::read_to_string(data_dir.join("agent-token"))?.trim().to_string();
+                // v1.0 archive in keyring mode: bare token → legacy payload
+                let mut map = std::collections::BTreeMap::new();
+                map.insert("legacy".to_string(), tok);
+                state::serialize_key_payload(&map)
+            };
+            crate::keyring::store(data_dir, &payload)?;
+            let _ = std::fs::remove_file(data_dir.join("device-keys.json"));
             let _ = std::fs::remove_file(data_dir.join("agent-token"));
             let conn = state::open_db(&data_dir.join("state.db"))?;
             state::set_meta(&conn, "secret_store", "keyring")?;
             // purge any file-mode meta copy so there is exactly one source of truth
             let _ = conn.execute("DELETE FROM meta WHERE key = 'agent_token'", []);
-            println!("  agent token restored into the kernel keyring (no plaintext file kept)");
+            println!("  device keys restored into the kernel keyring (no plaintext file kept)");
         } else {
             // file-mode restore over a dir that previously ran in keyring mode:
             // drop the now-stale kernel key (hygiene — one source of truth).

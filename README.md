@@ -13,7 +13,7 @@ one keystroke. Everything it does is written down.
 
 - One static binary, ~8 MB, starts in under 150 ms, ~10 MB of RAM
 - Linux (x86_64), no cloud account, no tunnel service, no telemetry
-- Rust, ~7,300 lines, 25 ADRs, 78 unit tests, **172 end-to-end checks** — see
+- Rust, ~9,600 lines, 28 ADRs, 5 research notes, 104 unit tests, **231 end-to-end checks** — see
   [Why you can trust it](#why-you-can-trust-it)
 
 ---
@@ -22,25 +22,36 @@ one keystroke. Everything it does is written down.
 
 ```
 you     frtrol start                          ← run it once, that's the whole setup
-agent   frtrol agent request myai full_access 12 fix the nginx config
+you     frtrol device add myagent             ← prints a device id + password (once)
+agent   frtrol agent login FAR-7K2M-QX94      ← needs ONLY those two things
+agent   frtrol agent request myai terminal_only 12 fix the nginx config
 you     frtrol approve req_7KJyfWu39pCwW...    ← you decide, for how long
 agent   frtrol agent exec ses_... systemctl status nginx
 you     frtrol revoke ses_...                  ← or just... wait. it expires.
 ```
 
-Three people are involved: an agent that wants to work, you at the machine, and a
+Three parties are involved: an agent that wants to work, you at the machine, and a
 5-minute window in which your decision is required. Miss the window and the request
 evaporates. No approval, no session, no access — that simple.
 
-When the daemon starts, it prints the agent token **once** and stores the rest locally:
+The agent's entire identity is a **device id + password** — two strings you hand over
+once. Login exchanges the password for a per-device signing key (rotated on every
+login), pins the daemon's certificate SSH-style (TOFU fingerprint), and from then on
+every request is HMAC-signed and auditable. Lose the password? Rotate it:
+`frtrol device passwd <id>`. Suspicious device? `frtrol device lock <id>` kills its
+login, its key, *and* its live sessions in one command.
+
+When the daemon starts it prints the essentials — including the certificate
+fingerprint your agents can verify out-of-band:
 
 ```
-[2026-10-02 09:30:12 UTC] FARcontrol 1.0.0 daemon ready | pid 12345
+[2026-10-02 09:30:12 UTC] FARcontrol 1.1.0 daemon ready | pid 12345
   data dir  : /home/you/.farcontrol
-  os/arch   : linux / x86_64
-  agent API : https://127.0.0.1:7788  (TLS, cert-pinned by the agent CLI)
+  agent API : https://127.0.0.1:7788  (device login + HMAC + TLS)
   admin API : https://127.0.0.1:7789  (loopback only — approvals never touch the network)
-  web UI    : https://127.0.0.1:7789/ui  (login = the admin token)
+  web UI    : https://127.0.0.1:7789/  (owner console, v2)
+  fingerprint: SHA256:1wl3YwHUDB+k+ul2U0QEXp8syna+Jg8wLLSangiYygI   (TOFU — compare at agent login)
+  devices   : none yet — register one:  frtrol device add <name>
 ```
 
 ---
@@ -53,48 +64,70 @@ frtrol start
 ```
 
 That's it. First run auto-initializes everything: config, SQLite state, TLS certificate,
-and two random 256-bit tokens — one for the agent, one for you. The agent token is shown
-once and written to `~/.farcontrol/agent-token` (mode 0600). Hand it to your AI agent over
-a secure channel; that token is its *identity*, nothing more.
+and your admin token. Then register a device for your agent:
+
+```bash
+frtrol device add office-laptop
+# ✓ device created — FAR-7K2M-QX94 "office-laptop"
+#   PASSWORD (shown once — store it now): harbor-tiger-42-blue-quantum-mango
+```
+
+Hand the agent exactly two things: **the device id and the password**. That's the whole
+onboarding. (Upgrading from 1.0? Your old agent-token automatically becomes a
+`legacy` key-only device — nothing breaks, see CHANGELOG.)
 
 From then on, your entire side of the conversation:
 
 | You run | What happens |
 |---|---|
-| `frtrol status` | Is the daemon alive? Anything pending? |
-| `frtrol list` | Pending requests + live sessions (with countdown) |
+| `frtrol status` | Is the daemon alive? Anything pending? (KPI summary) |
+| `frtrol list` | Pending requests + live sessions — gh-style tables, live countdowns |
 | `frtrol approve <req-id>` | **Grants access.** You can shorten: `--hours 2` (never extend) |
 | `frtrol deny <req-id>` | Refuses. No session is ever created. |
 | `frtrol revoke <ses-id>` | Kills access *now* — the next request fails |
-| `frtrol rotate` | New agent token; the old one dies mid-flight |
-| `frtrol panic [reason]` | **Emergency stop:** every session revoked, terminals killed, pending expired, token rotated |
-| `frtrol doctor` | Health checks: DB, audit chain, certs, keyring, clock — exit 0 = all green |
+| `frtrol device add <name>` | Registers a device → prints id + password (once) |
+| `frtrol device list` | Every device: status, last seen, live sessions |
+| `frtrol device passwd <id>` | Rotates a device password **and** its key — forces re-login |
+| `frtrol device lock <id>` | Login disabled + key rotated + its sessions revoked |
+| `frtrol device unlock <id>` | Re-enables login (password unchanged) |
+| `frtrol device remove <id>` | Device gone: key destroyed, sessions revoked |
+| `frtrol fingerprint` | The daemon cert fingerprint (compare at agent login) |
+| `frtrol panic [reason]` | **Emergency stop:** every session revoked, terminals killed, pending expired, **every device key rotated** |
+| `frtrol doctor` | Health checks: DB, devices, audit chain, certs, keyring, clock — exit 0 = all green |
 | `frtrol audit` | The full security trail, metadata only |
 | `frtrol backup / frtrol restore` | Full state, tar.gz, 0600, restore refuses to run live |
-| `frtrol` | Forgot everything? Bare `frtrol` prints a 4-line cheat sheet |
+| `frtrol` | Forgot everything? Bare `frtrol` prints a cheat sheet |
 
-Typing `frtrol` with no arguments prints the quick guide. Every command is positional —
-no `--flags` gymnastics, no symbols to mistype.
+Every command also takes `--json` for machine-readable output (stable schema, no
+styling — made for scripts and AI agents). Typing `frtrol` with no arguments prints the
+quick guide. Commands are positional — no `--flags` gymnastics.
 
 ## Quickstart (agent side — built for an AI)
 
 The agent CLI is deliberately boring, so an LLM can drive it blind:
 
 ```bash
+frtrol agent login FAR-7K2M-QX94            # onboarding: id + password (TOFU-pins the cert)
 frtrol agent request myai full_access 12 fix the nginx config   # ask (positional)
-frtrol agent status req_7KJy...                                  # poll (auto-detects req/ses)
-frtrol agent exec ses_7KJy... ls -la                             # run a command
-frtrol agent term ses_7KJy... bash                               # interactive terminal
+frtrol agent status req_7KJy...             # poll (auto-detects req/ses)
+frtrol agent exec ses_7KJy... ls -la        # run a command
+frtrol agent term ses_7KJy... bash          # interactive terminal
 frtrol agent read  ses_7KJy... /var/log/nginx/error.log          # full_access only
 frtrol agent write ses_7KJy... /tmp/notes.txt "hello"            # or pipe stdin
 frtrol agent ls / ps / kill / app / shot / type ...              # full_access adapters
-frtrol agent revoke ses_7KJy...                                  # agents can always give up access
+frtrol agent revoke ses_7KJy...             # agents can always give up access
 ```
 
-Credentials come from the environment (`FARCONTROL_TOKEN`, `FARCONTROL_URL`), so it works
-in CI and headless agents. Every response is **one line of JSON**; every error is
+Login is the only onboarding step. First connect captures the daemon certificate
+(SSH-style TOFU: the fingerprint is printed and pinned; add `--expect-fp SHA256:...` to
+verify it strictly — a mismatch aborts *before* the password is sent). The password is
+read from `FARCONTROL_PASSWORD` or prompted — never a CLI flag (no shell-history leaks).
+
+Credentials come from the environment (`FARCONTROL_PASSWORD`, `FARCONTROL_URL`,
+`FARCONTROL_DEVICE`, and legacy `FARCONTROL_TOKEN`), so it works in CI and headless
+agents. Every response is **one line of JSON**; every error is
 `{"error":{"code":"..."}}` with a *stable* code the agent can branch on (`scope_denied`,
-`session_expired`, `rate_limited`, …). Exit codes are the stable 0–7 contract:
+`session_expired`, `rate_limited`, `device_locked`, …). Exit codes are the stable 0–7 contract:
 
 ```
 0 ok · 2 bad usage · 3 auth failed · 4 not allowed · 5 timeout · 6 unavailable · 7 conflict
@@ -178,13 +211,17 @@ in someone else's datacenter. For remote agents, the boring tools are the right 
 The **admin plane stays loopback-only, always.** The daemon refuses to bind it anywhere
 else. Approvals and revocations never travel.
 
-## The web console (optional, same security model)
+## The web console v2 (optional, same security model)
 
-`https://127.0.0.1:7789/ui` — login with the admin token. Pending requests with duration
-picker, live session cards (who / what / until), one-click revoke, the last 50 audit
-events, and a big red PANIC button. Cookies are HttpOnly + SameSite=Strict, CSRF is a
-JS-only header, the whole UI is one HTML file rendered via `textContent` (no HTML string
-sinks to sanitize). A restart logs you out — fail closed.
+`https://127.0.0.1:7789/` — login with the admin token. The v2 console is a proper dark
+owner cockpit: sidebar navigation (Dashboard / Sessions / Devices / Audit / Danger), KPI
+cards, pending-request approvals with a duration picker, live session countdowns, a full
+**device panel** (add with copy-to-clipboard secrets, lock/unlock, rotate password,
+remove), a searchable audit trail with a live hash-chain status chip, and a big red
+PANIC button with a confirmation modal. It polls every 3 s — no websockets, no extra
+ports. Cookies are HttpOnly + SameSite=Strict, CSRF is a JS-only header, the whole UI
+remains one dependency-free HTML file rendered via `textContent` (no HTML string sinks
+to sanitize, no CDN, works fully offline). A restart logs you out — fail closed.
 
 ---
 
@@ -196,22 +233,26 @@ hand-waved.
 
 | Evidence | Where |
 |---|---|
-| 78 unit tests (crypto vectors, policy, state machine, auth, config, lockout math) | `cargo test` |
-| **172 end-to-end checks** — the full lifecycle, both planes, kill/restart mid-flight, TLS, tamper, chaos fuzz, backup/restore, panic under load | `scripts/e2e.sh` |
-| 6 mutation checks — we *broke* CSRF, the kill-guard, the fuzz panic-handler, the backoff escalation, config validation and the keyring probe on purpose, watched the suite go red, and reverted | `tracking/evidence/EVIDENCE-00{1,2}.md` |
+| **104 unit tests** (crypto vectors, Argon2, device ids, policy, state machine, auth, config, lockout math) | `cargo test` |
+| **231 end-to-end checks** — the full device-auth lifecycle + legacy v1.0 migration + TOFU fingerprint + per-device backoff + console v2, both planes, kill/restart mid-flight, TLS, tamper, chaos fuzz, backup/restore, panic under load | `scripts/e2e.sh` |
+| **9 mutation checks** — we *broke* CSRF, the kill-guard, the fuzz panic-handler, the backoff escalation, config validation, the keyring probe, **the device lock, the login backoff, and the TOFU compare** on purpose, watched the suite go red, and reverted | `tracking/evidence/EVIDENCE-00{1,2}.md` |
 | Fuzzing: the §75 corpus + 2,000 seeded-random requests + 50-way concurrent chaos against the *real* router, in-process, every `cargo test` run | ADR-0019 |
-| Supply chain: `cargo audit` (0 CVEs), SPDX SBOM (220 crates), secret scan, clippy at 0 warnings | `scripts/sbom.sh`, `scripts/secret-scan.sh` |
-| Design record: 25 ADRs, one per decision, each accepted or rejected on the record | `docs/adr/` |
+| Console v2: browser-driven login→dashboard→device-add flow with zero console errors + an independent VLM design review (8/10, no visual bugs) | `reports/verification-output.txt` |
+| Supply chain: `cargo audit` (0 CVEs), SPDX SBOM (239 crates), secret scan, clippy at 0 warnings | `scripts/sbom.sh`, `scripts/secret-scan.sh` |
+| Design record: 28 ADRs + 5 research notes, one per decision, each accepted or rejected on the record | `docs/adr/`, `docs/research/` |
 | Mission tracking: per-requirement status with evidence links — including the honest PARTIALs | `tracking/PROGRESS.md` |
 
 The release artifacts ship with `SHA256SUMS` and a GPG detached signature; the public key
 lives in the repo (`docs/RELEASE_KEY.asc`).
 
-### The 1.0.0 verification wall (as of release day)
+### The 1.1.0 verification wall (as of release day)
 
 ```
-unit tests ......... 78 passed
-e2e checks ......... 172 passed, 0 failed      (32 sections, incl. stress-panic)
+unit tests ......... 104 passed
+e2e checks ......... 231 passed, 0 failed      (39 sections, incl. device-auth v1.1)
+mutation checks .... 9 total (6 prior + device lock / login backoff / TOFU)
+browser console .... v2 flows verified, zero JS console errors
+VLM design review .. 8/10, no visual bugs detected
 clippy ............. 0 warnings
 cargo audit ........ 0 vulnerabilities
 secret scan ........ clean
@@ -247,7 +288,7 @@ Full, unfiltered status per requirement: [`tracking/PROGRESS.md`](tracking/PROGR
 **From the release** (recommended):
 
 ```bash
-curl -LO https://github.com/albytehq/FARcontrol/releases/download/v1.0.0/frtrol-linux-amd64
+curl -LO https://github.com/albytehq/FARcontrol/releases/download/v1.1.0/frtrol-linux-amd64
 chmod +x frtrol-linux-amd64 && sudo mv frtrol-linux-amd64 /usr/local/bin/frtrol
 # verify: check SHA256SUMS + SHA256SUMS.asc against docs/RELEASE_KEY.asc
 ```
@@ -255,7 +296,7 @@ chmod +x frtrol-linux-amd64 && sudo mv frtrol-linux-amd64 /usr/local/bin/frtrol
 **Debian/Ubuntu (.deb):**
 
 ```bash
-sudo dpkg -i frtrol_1.0.0_amd64.deb
+sudo dpkg -i frtrol_1.1.0_amd64.deb
 sudo systemctl enable --now frtrol@$(id -un)   # hardened unit included
 ```
 

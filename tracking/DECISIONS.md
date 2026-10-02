@@ -74,3 +74,29 @@ D-NNN  <what was decided>
        Approved by: owner (<date>)    Source: Q-xxx / ADR NNNN
        Affects REQ: …                  Reversal cost: low | medium | high
 ```
+
+```
+D-045  Agent onboarding = device id + password (FAR-XXXX-XXXX, Argon2id m=64MiB, auto-generated 56.6-bit passwords, login rotates the key)
+       Approved by: owner (2026-10-02, chat: "yang diperlukan agent itu cuman ID device dan passwordnya")
+       Source: ADR-0025                Reversal cost: high (auth protocol)
+```
+```
+D-046  Fingerprint TOFU menggantikan handing cert.pem ke agent (SSH known_hosts model; --expect-fp strict; residual first-connect risk documented & mitigated)
+       Approved by: owner (2026-10-02, chat: "terserah tapi ... kalau kata kamu penting ya. keep aja" — TLS tetap, file cert tidak lagi dibagikan)
+       Source: ADR-0025 §4             Reversal cost: medium
+```
+```
+D-047  Token lama auto-migrate jadi device legacy (key-only, login disabled) — v1.0 agent binaries tetap jalan; fresh install menolak headerless
+       Approved by: owner (2026-10-02, chat: "token lama. migrate")
+       Source: ADR-0025 §6             Reversal cost: low
+```
+```
+D-048  CLI v2 = gh-style (comfy-table + owo-colors, NO_COLOR/pipe-safe, --json global) + web console total redesign (dark sidebar, device panel, tetap single-file textContent-only tanpa CDN)
+       Approved by: owner (2026-10-02, chat: "cli style gh style / json ya --json / scope tambah web UI redesign total")
+       Source: ADR-0026, ADR-0027      Reversal cost: low (presentation layer)
+```
+```
+D-049  Research 5x sebelum implement (R1 enterprise CLI, R2 rust crates, R3 web UI, R4 device-auth security, R5 synthesis) — dikerjakan sendiri, tanpa subagent, sesuai instruksi owner
+       Approved by: owner (2026-10-02, chat: "disarankan buat research 5x buat cli dan UI web. no subagent allowed")
+       Source: docs/research/          Reversal cost: none
+```

@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://evilmartians.com/chronicles/cli-ux-best-practices-3-patterns-for-improving-progress-displays",
+    "name": "CLI UX best practices: 3 patterns for improving progress displays",
+    "snippet": "Adding a spinning animation with a status line is a simple way to show that something is happening, especially during a lengthy process. Simple ... Missing:  enterprise  | Show results with:",
+    "host_name": "evilmartians.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dev.to/3ni8ma/designing-cli-tools-that-people-actually-enjoy-using-294e",
+    "name": "Designing CLI Tools That People Actually Enjoy Using",
+    "snippet": "This post covers argument design patterns, progress indicators, color semantics, error messaging philosophy, and how to make terminal tools ... Missing:  practices  2025  enterprise",
+    "host_name": "dev.to",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/@adedayoagarau/cli-for-everybody-a-content-designers-guide-to-command-line-ux-39d574b4cd86",
+    "name": "CLI for Everyone: UX Writing for Command Lines - Medium",
+    "snippet": "Color-blind users: Never use color as the only indicator: ❌ Green = success, red = failure (no text distinction) ✅ ✓ Success: and ✗ Error: with ... Missing:  enterprise  | Show results with:",
+    "host_name": "medium.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://mcpmarket.com/tools/skills/cli-ux-patterns-best-practices",
+    "name": "CLI UX Patterns Claude Code Skill | Build Better Terminals",
+    "snippet": "Enhance your CLI tools with Claude Code. Master error messages, progress bars, and UX patterns using Rust crates like indicatif, miette, and dialoguer. Missing:  2025  terminal  enterprise",
+    "host_name": "mcpmarket.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://skill-repo.io/extensions/skill/pjt222/design-cli-output",
+    "name": "Design Cli Output - Skill",
+    "snippet": "Covers color palette selection, status indicator design, reporter function architecture, ceremony/narrative output variants, and cross-terminal compatibility. Missing:  best  | Show results with:",
+    "host_name": "skill-repo.io",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/commandline/comments/1c5btey/cli_ux_best_practices_3_patterns_for_improving",
+    "name": "CLI UX best practices: 3 patterns for improving progress displays",
+    "snippet": "3 popular UI patterns for keeping users informed about ongoing processes: the spinner, the X of Y pattern, and the progress bar, the pros and ... Missing:  2025  color  indicators",
+    "host_name": "www.reddit.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

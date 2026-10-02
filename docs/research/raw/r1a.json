@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://cli.github.com/manual/gh_help_formatting",
+    "name": "gh formatting help - GitHub CLI",
+    "snippet": "Once in JSON, the output can be further formatted according to a required formatting string by adding either the --jq or --template flag. This is useful for ... Missing:  design  principles  humanize  UX",
+    "host_name": "cli.github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/GoogleChrome/modern-web-guidance/blob/main/skills/modern-web-guidance/guides/user-experience/format-human-readable-durations.md",
+    "name": "Formatting Human-Readable Durations with Temporal - GitHub",
+    "snippet": "To format a duration: (MANDATORY) Create a Duration: Use Temporal.Duration.from() to create a duration object from a set of units. (OPTIONAL) Apply Balancing ...",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://heaths.dev/tips/2021/08/24/gh-table-formatting.html",
+    "name": "Table formatting in GitHub CLI 2.0 - Heath Stewart's Blog",
+    "snippet": "New in the GitHub CLI 2.0 is the ability to format results from built-in commands or custom API calls. improve the output of my git user ... Missing:  design  principles  humanize  UX",
+    "host_name": "heaths.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/cli/cli/issues/14413",
+    "name": "Feature request: allow selecting fields for human-readable list",
+    "snippet": "Motivation. Today, gh pr list provides a predefined human-readable table, while --json provides field selection for structured output. Missing:  principles  humanize  UX",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://nearform.com/digital-community/the-pragmatic-programmers-guide-to-github-cli",
+    "name": "The Pragmatic Programmer's Guide to Github CLI | Nearform",
+    "snippet": "In this blog post, we will cover how the Github CLI can reduce the amount of time spent on the browser, where countless distractions compete ...",
+    "host_name": "nearform.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://cli.github.com/manual",
+    "name": "GitHub CLI Manual",
+    "snippet": "GitHub CLI, or gh , is a command-line interface to GitHub for use in your terminal or your scripts. To set your preferred editor, use gh config set editor  . Missing:  output  design  principles  table  humanize  UX",
+    "host_name": "cli.github.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

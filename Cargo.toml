@@ -1,6 +1,6 @@
 [package]
 name = "frtrol"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 description = "FARcontrol — approval-gated control plane for external AI agents (authentication ≠ authorization)"
 license = "MIT"
@@ -28,6 +28,9 @@ rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"]
 portable-pty = "0.8"
 libc = "0.2"
 hyper-util = { version = "0.1", features = ["tokio", "server", "server-auto", "service"] }
+argon2 = { version = "0.5", features = ["std"] }
+comfy-table = "7"
+owo-colors = "4"
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

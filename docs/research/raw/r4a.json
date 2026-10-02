@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://dev.to/mahafuz/understanding-knownhosts-and-host-key-verification-what-it-protects-against-and-how-tofu-works-pid",
+    "name": "Understanding known_hosts and Host Key Verification",
+    "snippet": "The model SSH uses is called Trust On First Use, or TOFU. The logic: First connection: no existing record. SSH shows you the fingerprint and ...",
+    "host_name": "dev.to",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://jpmens.net/2026/04/03/ssh-certificates-the-better-ssh-experience",
+    "name": "SSH certificates: the better SSH experience - Jan-Piet Mens",
+    "snippet": "This Trust on First Use (TOFU) is what permits SSH to ensure that my SSH client verifies which server it's talking to.",
+    "host_name": "jpmens.net",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://en.wikipedia.org/wiki/Trust_on_first_use",
+    "name": "Trust on first use - Wikipedia",
+    "snippet": "Trust on first use (TOFU), or trust upon first use (TUFU), is an authentication scheme used by client software which needs to establish a trust relationship ...",
+    "host_name": "en.wikipedia.org",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://smallstep.com/blog/use-ssh-certificates",
+    "name": "If you're not using SSH certificates you're doing SSH wrong",
+    "snippet": "What you're supposed to do is verify the key fingerprint out-of-band. When you type \"yes\" /.ssh/known_hosts . This is the trust on first use ( ...",
+    "host_name": "smallstep.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://security.stackexchange.com/questions/176950/ssh-and-man-in-the-middle",
+    "name": "server - SSH and man-in-the-middle",
+    "snippet": "... (TOFU - trust on first use). Someone told me that the server domain ... SSH - What is the relationship between fingerprint and known_hosts file?",
+    "host_name": "security.stackexchange.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://termai.sh/blog/host-key-tofu",
+    "name": "SSH host key TOFU and why your mobile client should care",
+    "snippet": "A practical guide to Trust On First Use (TOFU) host key verification, with notes on what most mobile SSH apps get wrong. Missing:  certificate  | Show results with:",
+    "host_name": "termai.sh",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

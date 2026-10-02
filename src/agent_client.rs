@@ -14,6 +14,9 @@ pub struct Ctx {
     agent: ureq::Agent,
     base: String,
     token: String,
+    /// v1.1 (ADR-0025): the logged-in device id — signs + travels as
+    /// X-Far-Device on every request. None = legacy v1.0 token mode.
+    device: Option<String>,
     raw: bool,
 }
 
@@ -26,7 +29,12 @@ fn call(ctx: &Ctx, method: &str, path: &str, query: Option<&str>, body: Option<&
     let nonce = crypto::gen_nonce();
     let body_str = body.unwrap_or("");
     let body_sha = crypto::sha256_hex(body_str.as_bytes());
-    let payload = crypto::signing_payload(&ts, &nonce, method, path, &body_sha);
+    // v1.1: the device claim is the 6th signed line (bound, not swappable).
+    let mut payload = crypto::signing_payload(&ts, &nonce, method, path, &body_sha);
+    if let Some(dev) = &ctx.device {
+        payload.push('\n');
+        payload.push_str(dev);
+    }
     let sig = crypto::hmac_hex(&ctx.token, &payload);
 
     let req = if method == "GET" {
@@ -34,11 +42,14 @@ fn call(ctx: &Ctx, method: &str, path: &str, query: Option<&str>, body: Option<&
     } else {
         ctx.agent.post(&url)
     };
-    let req = req
+    let mut req = req
         .set("X-Far-Timestamp", &ts)
         .set("X-Far-Nonce", &nonce)
         .set("X-Far-Signature", &sig)
         .set("Content-Type", "application/json");
+    if let Some(dev) = &ctx.device {
+        req = req.set("X-Far-Device", dev);
+    }
 
     let resp = if method == "GET" {
         req.call()
@@ -142,10 +153,17 @@ pub fn run(
     data_dir: &Path,
     url: Option<String>,
     token: Option<String>,
+    device: Option<String>,
     timeout_secs: u64,
     raw: bool,
     cmd: crate::AgentCmd,
 ) -> anyhow::Result<i32> {
+    // v1.1 (ADR-0025 §2): login runs BEFORE credentials exist — it performs
+    // TOFU cert capture/pin, then exchanges the password for a device key.
+    if let crate::AgentCmd::Login { device_id, expect_fp } = &cmd {
+        return login(data_dir, url.as_deref(), device_id, expect_fp.as_deref(), timeout_secs);
+    }
+
     // v0.2: default URL follows the daemon's TLS mode (cert.pem present = https),
     // and https pins the daemon's own self-signed cert (TOFU — cert travels
     // with the token; override the CA with FARCONTROL_CA).
@@ -158,22 +176,37 @@ pub fn run(
                 "http://127.0.0.1:7788".into()
             }
         });
+    // v1.1 credential resolution — device mode (device-id + device-key files)
+    // wins; the v1.0 agent-token flow keeps working unchanged (legacy compat).
+    let dev_from_file = std::fs::read_to_string(data_dir.join("device-id"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let key_from_file = std::fs::read_to_string(data_dir.join("device-key"))
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let device = device
+        .or_else(|| std::env::var("FARCONTROL_DEVICE").ok())
+        .or(dev_from_file);
     let token = token
+        .or_else(|| std::env::var("FARCONTROL_TOKEN").ok())
+        .or(key_from_file)
         .or_else(|| std::fs::read_to_string(data_dir.join("agent-token")).ok().map(|s| s.trim().to_string()))
-        .context("no agent token — pass --token <token>, set FARCONTROL_TOKEN, or place agent-token in FARCONTROL_HOME")?;
+        .context("no credentials — run 'frtrol agent login <FAR-XXXX-XXXX>' (or pass --token / FARCONTROL_TOKEN for the legacy v1.0 flow)")?;
     let agent = if base.starts_with("https") {
         let ca = std::env::var("FARCONTROL_CA")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|_| data_dir.join("cert.pem"));
         let pem = std::fs::read_to_string(&ca)
-            .with_context(|| format!("https needs the daemon cert: {} (copy cert.pem next to the token, or set FARCONTROL_CA)", ca.display()))?;
+            .with_context(|| format!("https needs the daemon cert: {} (run 'frtrol agent login' to capture + pin it, or set FARCONTROL_CA)", ca.display()))?;
         crate::tls::https_agent(&pem, Duration::from_secs(timeout_secs.max(1)))?
     } else {
         ureq::AgentBuilder::new()
             .timeout(Duration::from_secs(timeout_secs.max(1)))
             .build()
     };
-    let ctx = Ctx { agent, base, token, raw };
+    let ctx = Ctx { agent, base, token, device, raw };
 
     // §66 (ADR-0022): classify failures — transport problems exit 6
     // (unavailable) or 5 (timeout); server error envelopes already carry the
@@ -188,8 +221,144 @@ pub fn run(
     }
 }
 
+/// v1.1 (ADR-0025 §2/§4): device login — the agent's ONLY onboarding step.
+/// Flow: validate id → resolve the server cert (pin existing / FARCONTROL_CA /
+/// TOFU capture + fingerprint display + optional --expect-fp strict compare) →
+/// POST password over the pinned channel → store device-id + device-key (0600).
+fn login(
+    data_dir: &Path,
+    url: Option<&str>,
+    device_id: &str,
+    expect_fp: Option<&str>,
+    timeout_secs: u64,
+) -> anyhow::Result<i32> {
+    let device_id = device_id.trim().to_string();
+    if !crate::crypto::device_id_valid(&device_id) {
+        eprintln!(
+            "'{device_id}' is not a valid FAR-XXXX-XXXX device id — single typos are caught by the check char (got it from 'frtrol device add' output?)"
+        );
+        return Ok(2);
+    }
+    let base = url
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("FARCONTROL_URL").ok())
+        .unwrap_or_else(|| "https://127.0.0.1:7788".into());
+
+    // Password: env (script/AI mode) → stdin prompt. Never a CLI flag (shell
+    // history / process list is a leak surface).
+    let password = match std::env::var("FARCONTROL_PASSWORD") {
+        Ok(p) if !p.trim().is_empty() => p.trim().to_string(),
+        _ => {
+            eprint!("password for {device_id}: ");
+            let mut line = String::new();
+            std::io::stdin().read_line(&mut line)?;
+            line.trim().to_string()
+        }
+    };
+    if password.is_empty() {
+        eprintln!("empty password — aborting (fail closed)");
+        return Ok(2);
+    }
+
+    let timeout = Duration::from_secs(timeout_secs.max(1));
+    let agent = if !base.starts_with("https") {
+        ureq::AgentBuilder::new().timeout(timeout).build()
+    } else {
+        // Pin resolution order: FARCONTROL_CA → existing cert.pem → TOFU capture.
+        let existing = std::env::var("FARCONTROL_CA")
+            .map(std::path::PathBuf::from)
+            .ok()
+            .or_else(|| data_dir.join("cert.pem").exists().then(|| data_dir.join("cert.pem")));
+        match existing {
+            Some(ca) => {
+                let pem = std::fs::read_to_string(&ca)
+                    .with_context(|| format!("cannot read pinned cert {ca:?}"))?;
+                crate::tls::https_agent(&pem, timeout)?
+            }
+            None => {
+                // TOFU (ADR-0025 §4): handshake-only probe with the capture agent
+                // (carries NO password), display + pin, THEN send secrets.
+                let (cap, captured) = crate::tls::capture_agent(timeout)?;
+                let _ = cap.get(&format!("{base}/v1/ping")).call(); // 401 is fine — the handshake already captured the cert
+                let der = captured
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone()
+                    .context("TLS handshake failed — no certificate captured (is the daemon running? 'frtrol start' on the owner machine)")?;
+                let fp = crate::crypto::cert_fingerprint(&der);
+                println!("server fingerprint: {fp}");
+                if let Some(expect) = expect_fp {
+                    if fp != expect.trim() {
+                        eprintln!("FINGERPRINT MISMATCH — aborting BEFORE sending the password (expected {expect})");
+                        return Ok(3);
+                    }
+                    println!("fingerprint matches --expect-fp ✓ (strict TOFU verified)");
+                } else {
+                    println!("pinned (TOFU). For full MITM protection compare this out-of-band with 'frtrol fingerprint' on the owner side.");
+                }
+                let pem = crate::tls::der_to_pem(&der, "CERTIFICATE");
+                std::fs::create_dir_all(data_dir)?;
+                std::fs::write(data_dir.join("cert.pem"), &pem)?;
+                crate::tls::https_agent(&pem, timeout)?
+            }
+        }
+    };
+
+    // Exchange the password over the pinned channel (no HMAC — pre-auth).
+    let resp = agent
+        .post(&format!("{base}/v1/auth/login"))
+        .set("Content-Type", "application/json")
+        .send_string(&json!({ "device_id": device_id, "password": password }).to_string());
+    let (code, body) = match resp {
+        Ok(r) => (r.status(), r.into_string().unwrap_or_default()),
+        Err(ureq::Error::Status(code, r)) => (code, r.into_string().unwrap_or_default()),
+        Err(e) => {
+            let msg = format!("network error: {e} — is the daemon running? [fail closed: no action taken]");
+            eprintln!("{msg}");
+            return Ok(net_exit(&msg));
+        }
+    };
+    if !(200..300).contains(&code) {
+        eprintln!("{body}");
+        return Ok(err_exit(&body));
+    }
+    let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+    let key = v["device_key"].as_str().unwrap_or("").to_string();
+    if key.is_empty() {
+        eprintln!("server response carried no device_key — aborting (fail closed)");
+        return Ok(1);
+    }
+    // Persist the credentials (0600) — this is the agent's identity material.
+    std::fs::create_dir_all(data_dir)?;
+    let write_secret = |name: &str, content: &str| -> anyhow::Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let p = data_dir.join(name);
+        std::fs::write(&p, content)?;
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600))?;
+        Ok(())
+    };
+    write_secret("device-id", &format!("{device_id}\n"))?;
+    write_secret("device-key", &format!("{key}\n"))?;
+    // a stale legacy agent-token file would shadow nothing (device-key has
+    // priority) — remove it to keep the home clean.
+    let _ = std::fs::remove_file(data_dir.join("agent-token"));
+
+    println!(
+        "{}",
+        json!({
+            "ok": true,
+            "device_id": device_id,
+            "stored": format!("{}/device-id + device-key (0600)", data_dir.display()),
+            "next": "frtrol agent request <name> <scope> <hours> <reason…> — the owner approves",
+        })
+    );
+    Ok(0)
+}
+
 fn cmd_exec(ctx: &Ctx, cmd: crate::AgentCmd) -> anyhow::Result<i32> {
     match cmd {
+        // Login is intercepted in run() before credentials exist — unreachable here.
+        crate::AgentCmd::Login { .. } => unreachable!("agent login handled in run()"),
         crate::AgentCmd::Ping => {
             let (c, b) = call(ctx, "GET", "/v1/ping", None, None).map_err(anyhow::Error::msg)?;
             emit(ctx, c, b)

@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://dribbble.com/search/server-dashboard",
+    "name": "server dashboard - Dribbble",
+    "snippet": "Explore thousands of high-quality server dashboard images on Dribbble. Your resource to get inspired, discover and connect with designers worldwide. Missing:  self-  console  localhost",
+    "host_name": "dribbble.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.cloudpanel.io/blog/simple-web-server-dashboard",
+    "name": "7 Simple Web Server Dashboards to Host in 2025 - CloudPanel",
+    "snippet": "Discover how a simple web server dashboard can boost your server management. Learn to monitor, optimize, and control your server from any web browser.",
+    "host_name": "www.cloudpanel.io",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://awesome-selfhosted.net/tags/personal-dashboards.html",
+    "name": "Personal Dashboards - awesome-selfhosted",
+    "snippet": "Sleek, modern dashboard with many integrations and web-based config. ... Simple, standalone, self-hosted PHP page that is your window to your server and the web. Missing:  console  UI  design  localhost  examples",
+    "host_name": "awesome-selfhosted.net",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/glanceapp/glance",
+    "name": "GitHub - glanceapp/glance: A self-hosted dashboard that puts",
+    "snippet": "Various widgets · RSS feeds · Subreddit posts · Hacker News posts · Weather forecasts · YouTube channel uploads · Twitch channels · Market prices · Docker containers ...",
+    "host_name": "github.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://awesomehub.js.org/list/selfhosted/personal-dashboards",
+    "name": "Self-hosted / Personal Dashboards - AwesomeHub",
+    "snippet": "A self-hostable personal dashboard built for you. Includes status-checking, widgets, themes, icon packs, a UI editor and tons more! Missing:  console  design  localhost",
+    "host_name": "awesomehub.js.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.weweb.io/blog/admin-dashboard-ultimate-guide-templates-examples",
+    "name": "Admin Dashboard in 2026: Guide, Templates and Examples",
+    "snippet": "Admin dashboard vs admin panel: know the difference, then build the right one. Covers 8 dashboard types, templates, frameworks, and no-code ... Missing:  console  localhost",
+    "host_name": "www.weweb.io",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

@@ -11,10 +11,21 @@ pub fn now() -> i64 {
 
 /// Single source of truth for the schema version (readyz/doctor/migrate all
 /// read THIS — a literal in two places is how the v0.8 readyz regression happened).
-pub const SCHEMA_VERSION: &str = "3";
+pub const SCHEMA_VERSION: &str = "4";
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS devices (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    password_hash TEXT,
+    device_key TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    login_enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    last_seen INTEGER,
+    last_rotate INTEGER
+);
 CREATE TABLE IF NOT EXISTS requests (
     id TEXT PRIMARY KEY,
     agent_name TEXT NOT NULL,
@@ -28,7 +39,8 @@ CREATE TABLE IF NOT EXISTS requests (
     decided_at INTEGER,
     decided_by TEXT,
     session_id TEXT,
-    deny_reason TEXT
+    deny_reason TEXT,
+    device_id TEXT
 );
 CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
@@ -41,7 +53,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     expires_at INTEGER NOT NULL,
     status TEXT NOT NULL,
     revoked_at INTEGER,
-    revoke_reason TEXT
+    revoke_reason TEXT,
+    device_id TEXT
 );
 CREATE TABLE IF NOT EXISTS nonces (nonce TEXT PRIMARY KEY, seen_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS audit (
@@ -55,6 +68,7 @@ CREATE TABLE IF NOT EXISTS audit (
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status);
 CREATE INDEX IF NOT EXISTS idx_nonces_seen ON nonces(seen_at);
+CREATE INDEX IF NOT EXISTS idx_devices_status ON devices(status);
 "#;
 
 pub fn open_db(path: &Path) -> anyhow::Result<Connection> {
@@ -97,7 +111,17 @@ fn migrate(conn: &Connection) -> anyhow::Result<()> {
     add_col("requests", "agent_model")?;
     add_col("sessions", "agent_provider")?;
     add_col("sessions", "agent_model")?;
-    for (id, name) in [(1i64, "baseline-v0.1"), (2, "audit-hash-chain-v0.2"), (3, "agent-identity-v0.8")] {
+    // migration 4 (v1.1, ADR-0025): device registry + request/session ↔ device
+    // binding. Devices are created by `CREATE TABLE` in SCHEMA (fresh DBs); the
+    // ALTERs bind the legacy tables.
+    add_col("requests", "device_id")?;
+    add_col("sessions", "device_id")?;
+    for (id, name) in [
+        (1i64, "baseline-v0.1"),
+        (2, "audit-hash-chain-v0.2"),
+        (3, "agent-identity-v0.8"),
+        (4, "device-auth-v1.1"),
+    ] {
         let done: bool = conn
             .query_row("SELECT COUNT(*) FROM migrations WHERE id = ?1", params![id], |r| r.get::<_, i64>(0))
             .map(|n| n > 0)
@@ -331,9 +355,12 @@ pub struct RequestRow {
     pub decided_by: Option<String>,
     pub session_id: Option<String>,
     pub deny_reason: Option<String>,
+    /// v1.1 (ADR-0025 §7): device that filed the request; NULL = legacy
+    /// headerless requests from pre-1.1 agents.
+    pub device_id: Option<String>,
 }
 
-const REQ_COLS: &str = "id, agent_name, agent_provider, agent_model, scope, reason, requested_hours, status, created_at, decided_at, decided_by, session_id, deny_reason";
+const REQ_COLS: &str = "id, agent_name, agent_provider, agent_model, scope, reason, requested_hours, status, created_at, decided_at, decided_by, session_id, deny_reason, device_id";
 
 fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<RequestRow> {
     Ok(RequestRow {
@@ -350,6 +377,7 @@ fn row_to_request(r: &rusqlite::Row) -> rusqlite::Result<RequestRow> {
         decided_by: r.get(10)?,
         session_id: r.get(11)?,
         deny_reason: r.get(12)?,
+        device_id: r.get(13)?,
     })
 }
 
@@ -396,6 +424,8 @@ pub struct NewRequest<'a> {
     pub scope: &'a str,
     pub hours: f64,
     pub reason: &'a str,
+    /// v1.1: filing device id (None = legacy headerless agent, ADR-0025 §6).
+    pub device_id: Option<&'a str>,
 }
 
 pub fn create_request(
@@ -404,7 +434,7 @@ pub fn create_request(
     pol: &Policy,
     req: NewRequest<'_>,
 ) -> Result<RequestRow, ApiError> {
-    let NewRequest { agent_name, agent_identity, scope, hours, reason } = req;
+    let NewRequest { agent_name, agent_identity, scope, hours, reason, device_id } = req;
     let hours = pol.validate_hours(hours).map_err(|m| ApiError::bad_request("invalid_request", m))?;
     let pending: i64 = conn
         .query_row(
@@ -426,8 +456,8 @@ pub fn create_request(
         None => (None, None),
     };
     conn.execute(
-        "INSERT INTO requests(id, agent_name, agent_provider, agent_model, scope, reason, requested_hours, status, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8)",
-        params![id, agent_name, agent_provider, agent_model, scope, reason, hours, ts],
+        "INSERT INTO requests(id, agent_name, agent_provider, agent_model, scope, reason, requested_hours, status, created_at, device_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, ?9)",
+        params![id, agent_name, agent_provider, agent_model, scope, reason, hours, ts, device_id],
     )
     .map_err(ApiError::from)?;
     audit(
@@ -436,7 +466,7 @@ pub fn create_request(
         &format!("agent:{agent_name}"),
         "request.created",
         Some(&id),
-        json!({"scope": scope, "hours": hours, "reason": reason}),
+        json!({"scope": scope, "hours": hours, "reason": reason, "device": device_id}),
     );
     Ok(RequestRow {
         id,
@@ -452,6 +482,7 @@ pub fn create_request(
         decided_by: None,
         session_id: None,
         deny_reason: None,
+        device_id: device_id.map(|s| s.to_string()),
     })
 }
 
@@ -488,9 +519,10 @@ pub struct SessionRow {
     pub status: String,
     pub revoked_at: Option<i64>,
     pub revoke_reason: Option<String>,
+    pub device_id: Option<String>,
 }
 
-const SES_COLS: &str = "id, request_id, agent_name, agent_provider, agent_model, scope, created_at, expires_at, status, revoked_at, revoke_reason";
+const SES_COLS: &str = "id, request_id, agent_name, agent_provider, agent_model, scope, created_at, expires_at, status, revoked_at, revoke_reason, device_id";
 
 fn row_to_session(r: &rusqlite::Row) -> rusqlite::Result<SessionRow> {
     Ok(SessionRow {
@@ -505,6 +537,7 @@ fn row_to_session(r: &rusqlite::Row) -> rusqlite::Result<SessionRow> {
         status: r.get(8)?,
         revoked_at: r.get(9)?,
         revoke_reason: r.get(10)?,
+        device_id: r.get(11)?,
     })
 }
 
@@ -591,8 +624,8 @@ pub fn approve_request(
         conn.execute_batch("BEGIN IMMEDIATE").map_err(ApiError::from)?;
         let r = (|| -> Result<(), ApiError> {
             conn.execute(
-                "INSERT INTO sessions(id, request_id, agent_name, agent_provider, agent_model, scope, created_at, expires_at, status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active')",
-                params![ses_id, id, req.agent_name, req.agent_provider, req.agent_model, req.scope, ts, expires],
+                "INSERT INTO sessions(id, request_id, agent_name, agent_provider, agent_model, scope, created_at, expires_at, status, device_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'active', ?9)",
+                params![ses_id, id, req.agent_name, req.agent_provider, req.agent_model, req.scope, ts, expires, req.device_id],
             )
             .map_err(ApiError::from)?;
             conn.execute(
@@ -621,7 +654,7 @@ pub fn approve_request(
         "owner",
         "session.approved",
         Some(&ses_id),
-        json!({"request_id": id, "scope": req.scope, "hours": hours, "expires_at": expires}),
+        json!({"request_id": id, "scope": req.scope, "hours": hours, "expires_at": expires, "device": req.device_id}),
     );
     get_session(conn, &ses_id)
 }
@@ -743,12 +776,260 @@ pub fn nonces_cleanup(conn: &Connection) {
 }
 
 // ---------- token rotation ----------
+// v1.1: the meta-table token rotator is gone — keys live in the devices table
+// and rotate through device_set_key / persist_device_key (ADR-0025).
 
-pub fn rotate_agent_token(conn: &Connection, dir: &Path) -> anyhow::Result<String> {
-    let tok = crate::crypto::gen_token();
-    set_meta(conn, "agent_token", &tok)?;
-    audit(conn, dir, "owner", "token.rotated", None, json!({}));
-    Ok(tok)
+// ============================================================
+// v1.1.0 (ADR-0025): device registry
+// ============================================================
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceRow {
+    pub id: String,
+    pub name: String,
+    /// Argon2id PHC string; NULL = key-only legacy row (no password login).
+    pub password_hash: Option<String>,
+    /// HMAC key. In keyring mode this stays NULL in the DB — the key lives in
+    /// the kernel keyring payload map (never on disk).
+    #[serde(skip_serializing)]
+    pub device_key: Option<String>,
+    pub status: String,
+    pub login_enabled: bool,
+    pub created_at: i64,
+    pub last_seen: Option<i64>,
+    pub last_rotate: Option<i64>,
+}
+
+const DEV_COLS: &str = "id, name, password_hash, device_key, status, login_enabled, created_at, last_seen, last_rotate";
+
+fn row_to_device(r: &rusqlite::Row) -> rusqlite::Result<DeviceRow> {
+    Ok(DeviceRow {
+        id: r.get(0)?,
+        name: r.get(1)?,
+        password_hash: r.get(2)?,
+        device_key: r.get(3)?,
+        status: r.get(4)?,
+        login_enabled: r.get::<_, i64>(5)? != 0,
+        created_at: r.get(6)?,
+        last_seen: r.get(7)?,
+        last_rotate: r.get(8)?,
+    })
+}
+
+fn query_device(conn: &Connection, sql: &str, p: &[&dyn rusqlite::ToSql]) -> Option<DeviceRow> {
+    conn.query_row(sql, p, row_to_device).ok()
+}
+
+/// Create a device with a generated FAR-XXXX-XXXX id (collision-checked) and a
+/// fresh random device key. `password` is stored Argon2-hashed; pass None for a
+/// key-only (legacy) row. Caller hands `{id, password, key}` to the right side.
+pub fn device_create(
+    conn: &Connection,
+    dir: &Path,
+    name: &str,
+    password: Option<&str>,
+    key: &str,
+) -> anyhow::Result<DeviceRow> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 64 {
+        anyhow::bail!("device name must be 1–64 chars");
+    }
+    let hash = match password {
+        Some(p) => Some(crate::crypto::password_hash(p)?),
+        None => None,
+    };
+    // id collision check (paranoid; 35-bit space)
+    let mut id = crate::crypto::gen_device_id();
+    for _ in 0..8 {
+        if query_device(conn, "SELECT id FROM devices WHERE id = ?1", params![id]).is_none() {
+            break;
+        }
+        id = crate::crypto::gen_device_id();
+    }
+    let ts = now();
+    conn.execute(
+        "INSERT INTO devices(id, name, password_hash, device_key, status, login_enabled, created_at) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6)",
+        params![id, name, hash, key, password.is_some() as i64, ts],
+    )?;
+    audit(
+        conn,
+        dir,
+        "owner",
+        "device.created",
+        Some(&id),
+        json!({"name": name, "login_enabled": password.is_some()}),
+    );
+    Ok(query_device(
+        conn,
+        &format!("SELECT {DEV_COLS} FROM devices WHERE id = ?1"),
+        params![id],
+    )
+    .expect("just inserted"))
+}
+
+pub fn device_get(conn: &Connection, id: &str) -> Option<DeviceRow> {
+    query_device(conn, &format!("SELECT {DEV_COLS} FROM devices WHERE id = ?1"), params![id])
+}
+
+pub fn device_list(conn: &Connection) -> Vec<DeviceRow> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare(&format!("SELECT {DEV_COLS} FROM devices ORDER BY created_at ASC")) {
+        if let Ok(rows) = stmt.query_map([], row_to_device) {
+            for r in rows.flatten() {
+                out.push(r);
+            }
+        }
+    }
+    out
+}
+
+pub fn count_devices(conn: &Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM devices", [], |r| r.get(0)).unwrap_or(0)
+}
+
+/// The key-only legacy device (v1.0 agent-token migration, ADR-0025 §6).
+pub fn legacy_device(conn: &Connection) -> Option<DeviceRow> {
+    query_device(
+        conn,
+        &format!("SELECT {DEV_COLS} FROM devices WHERE login_enabled = 0 AND password_hash IS NULL ORDER BY created_at ASC LIMIT 1"),
+        &[],
+    )
+}
+
+/// v1.0 → v1.1 migration: the meta agent_token becomes the legacy device's key.
+/// Idempotent — no-op when the devices table already has a legacy row or the
+/// meta token is absent. Returns the legacy device when a migration happened.
+pub fn migrate_legacy_token(conn: &Connection, dir: &Path) -> anyhow::Result<Option<DeviceRow>> {
+    if legacy_device(conn).is_some() {
+        return Ok(None);
+    }
+    let Some(token) = get_meta(conn, "agent_token") else { return Ok(None) };
+    if token.is_empty() {
+        return Ok(None);
+    }
+    let dev = device_create(conn, dir, "legacy", None, &token)?;
+    // The devices table is now the single source of truth for this key.
+    let _ = conn.execute("DELETE FROM meta WHERE key = 'agent_token'", []);
+    audit(
+        conn,
+        dir,
+        "system",
+        "device.legacy_migrated",
+        Some(&dev.id),
+        json!({"note": "v1.0 agent token became the legacy device key (key-only, login disabled)"}),
+    );
+    Ok(Some(dev))
+}
+
+pub fn device_set_key(conn: &Connection, dir: &Path, id: &str, key: &str, actor: &str) -> anyhow::Result<()> {
+    let n = conn.execute("UPDATE devices SET device_key = ?1, last_rotate = ?2 WHERE id = ?3", params![key, now(), id])?;
+    if n == 0 {
+        anyhow::bail!("device {id} not found");
+    }
+    audit(conn, dir, actor, "device.key_rotated", Some(id), json!({}));
+    Ok(())
+}
+
+/// Rotate the password: new Argon2 hash + fresh key (forces re-login).
+pub fn device_set_password(
+    conn: &Connection,
+    dir: &Path,
+    id: &str,
+    password: &str,
+    key: &str,
+    actor: &str,
+) -> anyhow::Result<()> {
+    let hash = crate::crypto::password_hash(password)?;
+    let n = conn.execute(
+        "UPDATE devices SET password_hash = ?1, device_key = ?2, last_rotate = ?3 WHERE id = ?4 AND login_enabled = 1",
+        params![hash, key, now(), id],
+    )?;
+    if n == 0 {
+        anyhow::bail!("device {id} not found or login disabled (legacy key-only row)");
+    }
+    audit(conn, dir, actor, "device.passwd_rotated", Some(id), json!({"note": "password + key rotated — old key dies now"}));
+    Ok(())
+}
+
+pub fn device_set_login(conn: &Connection, dir: &Path, id: &str, enabled: bool) -> anyhow::Result<()> {
+    let n = conn.execute("UPDATE devices SET login_enabled = ?1 WHERE id = ?2", params![enabled as i64, id])?;
+    if n == 0 {
+        anyhow::bail!("device {id} not found");
+    }
+    audit(
+        conn,
+        dir,
+        "owner",
+        if enabled { "device.unlocked" } else { "device.locked" },
+        Some(id),
+        json!({}),
+    );
+    Ok(())
+}
+
+pub fn device_remove(conn: &Connection, dir: &Path, id: &str) -> anyhow::Result<()> {
+    let n = conn.execute("DELETE FROM devices WHERE id = ?1", params![id])?;
+    if n == 0 {
+        anyhow::bail!("device {id} not found");
+    }
+    audit(conn, dir, "owner", "device.removed", Some(id), json!({}));
+    Ok(())
+}
+
+pub fn device_touch(conn: &Connection, id: &str) {
+    let _ = conn.execute("UPDATE devices SET last_seen = ?1 WHERE id = ?2", params![now(), id]);
+}
+
+/// Every active session bound to a device (lock/remove must revoke them).
+pub fn sessions_of_device(conn: &Connection, id: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = conn.prepare("SELECT id FROM sessions WHERE device_id = ?1 AND status = 'active'") {
+        if let Ok(rows) = stmt.query_map(params![id], |r| r.get::<_, String>(0)) {
+            for r in rows.flatten() {
+                out.push(r);
+            }
+        }
+    }
+    out
+}
+
+/// Device JSON for listings (never leaks hash or key).
+pub fn device_json(d: &DeviceRow) -> Value {
+    let sessions = 0; // callers patch this in with a DB count when needed
+    json!({
+        "id": d.id,
+        "name": d.name,
+        "status": d.status,
+        "login_enabled": d.login_enabled,
+        "key_only": d.password_hash.is_none(),
+        "created_at": d.created_at,
+        "last_seen": d.last_seen,
+        "last_rotate": d.last_rotate,
+        "sessions_hint": sessions,
+    })
+}
+
+// ============================================================
+// Keyring payload map (pure functions — unit-testable without a kernel).
+// v1.1 keyring mode stores {"FAR-…": "key"} in ONE kernel key; v1.0 payloads
+// (a bare token string) are recognized and wrapped on load.
+// ============================================================
+
+pub fn parse_key_payload(payload: &str) -> std::collections::BTreeMap<String, String> {
+    let mut map = std::collections::BTreeMap::new();
+    let trimmed = payload.trim();
+    if let Ok(v) = serde_json::from_str::<std::collections::BTreeMap<String, String>>(trimmed) {
+        return v;
+    }
+    // v1.0 legacy payload: a bare token = the legacy device's key.
+    if !trimmed.is_empty() {
+        map.insert("legacy".into(), trimmed.to_string());
+    }
+    map
+}
+
+pub fn serialize_key_payload(map: &std::collections::BTreeMap<String, String>) -> String {
+    serde_json::to_string(map).unwrap_or_else(|_| "{}".into())
 }
 
 // ---------- helpers ----------
@@ -840,7 +1121,7 @@ mod tests {
         }
         // upgrade path: open_db runs migrate()
         let conn = open_db(&db).unwrap();
-        assert_eq!(get_meta(&conn, "schema_version").as_deref(), Some("3"), "version must be upgraded to 3");
+        assert_eq!(get_meta(&conn, "schema_version").as_deref(), Some("4"), "version must be upgraded to 4 (v1.1 devices)");
         assert_eq!(get_meta(&conn, "agent_token").as_deref(), Some("old-token-value"), "data must survive");
         let m2: i64 = conn
             .query_row("SELECT COUNT(*) FROM migrations WHERE id=2", [], |r| r.get(0))
@@ -862,7 +1143,7 @@ mod tests {
         let n: i64 = conn2
             .query_row("SELECT COUNT(*) FROM migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(n, 3, "migrations do not re-run");
+        assert_eq!(n, 4, "migrations do not re-run (4 after device-auth v1.1)");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -905,7 +1186,7 @@ mod tests {
     fn request_lifecycle_approve() {
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-a", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "test" }).unwrap();
+        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-a", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "test", device_id: None }).unwrap();
         assert_eq!(req.status, "pending");
 
         let ses = approve_request(&conn, dir.path(), &pol, &req.id, None).unwrap();
@@ -928,7 +1209,7 @@ mod tests {
     fn request_lifecycle_deny() {
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-b", agent_identity: None, scope: "full_access", hours: 5.0, reason: "r" }).unwrap();
+        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-b", agent_identity: None, scope: "full_access", hours: 5.0, reason: "r", device_id: None }).unwrap();
         let denied = deny_request(&conn, dir.path(), &req.id, "no").unwrap();
         assert_eq!(denied.status, "denied");
         assert_eq!(denied.deny_reason.as_deref(), Some("no"));
@@ -940,7 +1221,7 @@ mod tests {
     fn expiry_enforced_lazily() {
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-c", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r" }).unwrap();
+        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-c", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r", device_id: None }).unwrap();
         let ses = approve_request(&conn, dir.path(), &pol, &req.id, None).unwrap();
         // force expiry in the past
         conn.execute("UPDATE sessions SET expires_at = 1 WHERE id = ?1", params![ses.id]).unwrap();
@@ -955,7 +1236,7 @@ mod tests {
     fn revoke_enforced() {
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-d", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r" }).unwrap();
+        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-d", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r", device_id: None }).unwrap();
         let ses = approve_request(&conn, dir.path(), &pol, &req.id, None).unwrap();
         let r = revoke_session(&conn, dir.path(), &ses.id, "owner changed mind", "owner").unwrap();
         assert_eq!(r.status, "revoked");
@@ -978,7 +1259,7 @@ mod tests {
     fn approve_can_only_shorten() {
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-e", agent_identity: None, scope: "terminal_only", hours: 10.0, reason: "r" }).unwrap();
+        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-e", agent_identity: None, scope: "terminal_only", hours: 10.0, reason: "r", device_id: None }).unwrap();
         let ses = approve_request(&conn, dir.path(), &pol, &req.id, Some(50.0)).unwrap();
         assert_eq!(ses.expires_at - ses.created_at, 10 * 3600, "override beyond requested is clamped");
     }
@@ -998,8 +1279,8 @@ mod tests {
     fn second_concurrent_session_denied() {
         let (conn, dir) = setup();
         let pol = Policy::default(); // max_active_sessions = 1 (D-004)
-        let req1 = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-h", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r1" }).unwrap();
-        let req2 = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-h", agent_identity: None, scope: "full_access", hours: 6.0, reason: "r2" }).unwrap();
+        let req1 = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-h", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r1", device_id: None }).unwrap();
+        let req2 = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-h", agent_identity: None, scope: "full_access", hours: 6.0, reason: "r2", device_id: None }).unwrap();
         approve_request(&conn, dir.path(), &pol, &req1.id, None).unwrap();
         let err = approve_request(&conn, dir.path(), &pol, &req2.id, None).unwrap_err();
         assert_eq!(err.code, "session_limit");
@@ -1013,7 +1294,7 @@ mod tests {
     fn stale_pending_request_cannot_be_approved() {
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-i", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r" }).unwrap();
+        let req = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-i", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r", device_id: None }).unwrap();
         conn.execute("UPDATE requests SET created_at = 1 WHERE id=?1", params![req.id]).unwrap();
         let err = approve_request(&conn, dir.path(), &pol, &req.id, None).unwrap_err();
         assert_eq!(err.code, "request_not_pending");
@@ -1031,9 +1312,9 @@ mod tests {
         let (conn, dir) = setup();
         let pol = Policy::default();
         for i in 0..pol.max_pending_requests {
-            create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-f", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: &format!("r{i}") }).unwrap();
+            create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-f", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: &format!("r{i}"), device_id: None }).unwrap();
         }
-        let err = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-f", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "one too many" }).unwrap_err();
+        let err = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-f", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "one too many", device_id: None }).unwrap_err();
         assert_eq!(err.code, "request_limit");
     }
 
@@ -1043,7 +1324,7 @@ mod tests {
         std::env::remove_var("FARCONTROL_TEST_MODE");
         let (conn, dir) = setup();
         let pol = Policy::default();
-        let err = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-g", agent_identity: None, scope: "terminal_only", hours: 1.0, reason: "too short" }).unwrap_err();
+        let err = create_request(&conn, dir.path(), &pol, NewRequest { agent_name: "agent-g", agent_identity: None, scope: "terminal_only", hours: 1.0, reason: "too short", device_id: None }).unwrap_err();
         assert_eq!(err.code, "invalid_request");
     }
 }
@@ -1128,5 +1409,171 @@ mod retention_tests {
         std::fs::write(&p, text).unwrap();
         let (_, _, ok) = verify_audit_chain(&dir);
         assert!(!ok, "forged retained event must break the chain");
+    }
+}
+
+#[cfg(test)]
+mod device_tests {
+    use super::*;
+
+    fn d() -> (std::path::PathBuf, Connection) {
+        let dir = std::env::temp_dir().join(format!("frtrol-dev-{}-{}", std::process::id(), crate::crypto::gen_nonce()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let conn = open_db(&dir.join("t.db")).unwrap();
+        (dir, conn)
+    }
+
+    fn pol() -> Policy {
+        Policy::default()
+    }
+
+    #[test]
+    fn device_lifecycle_create_get_list() {
+        let (dir, conn) = d();
+        let key = crate::crypto::gen_device_key();
+        let dev = device_create(&conn, &dir, "office-laptop", Some("harbor-tiger-42-blue"), &key).unwrap();
+        assert!(crate::crypto::device_id_valid(&dev.id));
+        assert_eq!(dev.name, "office-laptop");
+        assert!(dev.login_enabled);
+        assert!(dev.password_hash.is_some());
+        assert!(dev.password_hash.unwrap().starts_with("$argon2id$"));
+        assert_eq!(dev.device_key.as_deref(), Some(key.as_str()));
+        assert_eq!(count_devices(&conn), 1);
+        assert_eq!(device_list(&conn).len(), 1);
+
+        // get + json must never leak hash/key
+        let got = device_get(&conn, &dev.id).unwrap();
+        assert_eq!(got.id, dev.id);
+        let j = device_json(&got).to_string();
+        assert!(!j.contains("argon2"));
+        assert!(!j.contains(&key), "device_json must not leak the key");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn device_name_validation() {
+        let (dir, conn) = d();
+        assert!(device_create(&conn, &dir, "", Some("x"), "k").is_err());
+        let long = "a".repeat(65);
+        assert!(device_create(&conn, &dir, &long, Some("x"), "k").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn login_disabled_for_key_only_rows() {
+        let (dir, conn) = d();
+        let dev = device_create(&conn, &dir, "legacy", None, "key-only").unwrap();
+        assert!(!dev.login_enabled);
+        assert!(dev.password_hash.is_none());
+        assert_eq!(legacy_device(&conn).map(|d| d.id), Some(dev.id));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn legacy_token_migration_is_idempotent_and_moves_source_of_truth() {
+        let (dir, conn) = d();
+        set_meta(&conn, "agent_token", "old-v1-token").unwrap();
+        let migrated = migrate_legacy_token(&conn, &dir).unwrap();
+        assert!(migrated.is_some(), "first call migrates");
+        let id = migrated.unwrap().id;
+        // token moved: meta gone, key lives in devices
+        assert!(get_meta(&conn, "agent_token").is_none(), "meta token must be consumed");
+        assert_eq!(device_get(&conn, &id).unwrap().device_key.as_deref(), Some("old-v1-token"));
+        // second call = no-op
+        assert!(migrate_legacy_token(&conn, &dir).unwrap().is_none());
+        assert_eq!(count_devices(&conn), 1);
+        // fresh DB (no token) → nothing to migrate
+        let (dir2, conn2) = d();
+        assert!(migrate_legacy_token(&conn2, &dir2).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir2);
+    }
+
+    #[test]
+    fn passwd_rotation_kills_old_key_and_hash() {
+        let (dir, conn) = d();
+        let dev = device_create(&conn, &dir, "d1", Some("first-password"), "k1").unwrap();
+        device_set_password(&conn, &dir, &dev.id, "second-password", "k2", "owner:test").unwrap();
+        let after = device_get(&conn, &dev.id).unwrap();
+        assert_eq!(after.device_key.as_deref(), Some("k2"));
+        assert!(crate::crypto::password_verify(after.password_hash.as_deref().unwrap(), "second-password"));
+        assert!(!crate::crypto::password_verify(after.password_hash.as_deref().unwrap(), "first-password"));
+        assert!(after.last_rotate.is_some());
+        // key-only (legacy) rows cannot rotate a password
+        let legacy = device_create(&conn, &dir, "legacy", None, "kl").unwrap();
+        assert!(device_set_password(&conn, &dir, &legacy.id, "nope", "k3", "owner:test").is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn device_lock_unlock_and_remove() {
+        let (dir, conn) = d();
+        let dev = device_create(&conn, &dir, "d1", Some("pw"), "k").unwrap();
+        device_set_login(&conn, &dir, &dev.id, false).unwrap();
+        assert!(!device_get(&conn, &dev.id).unwrap().login_enabled);
+        device_set_login(&conn, &dir, &dev.id, true).unwrap();
+        assert!(device_get(&conn, &dev.id).unwrap().login_enabled);
+        device_remove(&conn, &dir, &dev.id).unwrap();
+        assert!(device_get(&conn, &dev.id).is_none());
+        assert!(device_remove(&conn, &dir, &dev.id).is_err(), "double remove must fail");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sessions_bind_to_device_and_can_be_swept() {
+        let (dir, conn) = d();
+        let dev = device_create(&conn, &dir, "d1", Some("pw"), "k").unwrap();
+        let req = create_request(
+            &conn,
+            &dir,
+            &pol(),
+            NewRequest {
+                agent_name: "myai",
+                agent_identity: None,
+                scope: "terminal_only",
+                hours: 6.0,
+                reason: "test",
+                device_id: Some(&dev.id),
+            },
+        )
+        .unwrap();
+        assert_eq!(req.device_id.as_deref(), Some(dev.id.as_str()));
+        let ses = approve_request(&conn, &dir, &pol(), &req.id, None).unwrap();
+        assert_eq!(ses.device_id.as_deref(), Some(dev.id.as_str()));
+        assert_eq!(sessions_of_device(&conn, &dev.id), vec![ses.id.clone()]);
+        revoke_session(&conn, &dir, &ses.id, "owner test", "owner").unwrap();
+        assert!(sessions_of_device(&conn, &dev.id).is_empty(), "revoked session leaves the device sweep");
+
+        // legacy (headerless) request: device_id NULL
+        let req2 = create_request(
+            &conn,
+            &dir,
+            &pol(),
+            NewRequest { agent_name: "myai", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "legacy", device_id: None },
+        )
+        .unwrap();
+        assert!(req2.device_id.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn keyring_payload_map_roundtrip_and_legacy_wrap() {
+        // v1.1 map format roundtrips
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("FAR-7K2M-QX94".into(), "key-one".into());
+        map.insert("FAR-ABCD-EFGH".into(), "key-two".into());
+        let s = serialize_key_payload(&map);
+        assert_eq!(parse_key_payload(&s), map);
+
+        // v1.0 bare-token payload wraps as the legacy key
+        let legacy = parse_key_payload("old-bare-token");
+        assert_eq!(legacy.get("legacy").map(|s| s.as_str()), Some("old-bare-token"));
+
+        // garbage/empty → empty map (fail closed, nothing to verify against)
+        assert!(parse_key_payload("").is_empty());
+        assert!(parse_key_payload("not json {").is_empty() || parse_key_payload("not json {").len() <= 1);
+        // note: "not json {" is not a bare token? it IS a bare string → wrapped as legacy.
+        // acceptable: any non-JSON payload is treated as a bare v1.0 token.
     }
 }

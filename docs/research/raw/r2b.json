@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://crates.io/crates/owo-colors",
+    "name": "owo-colors - crates.io: Rust Package Registry",
+    "snippet": "owo-colors is also more-or-less a drop-in replacement for colored, allowing colored to work in a no_std environment. No allocations or ... Missing:  anstyle  | Show results with:",
+    "host_name": "crates.io",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.rs/owo-colors",
+    "name": "owo_colors - Rust - Docs.rs",
+    "snippet": "Supports NO_COLOR / FORCE_COLOR environment variables, checks if it's a tty, checks if it's running in CI (and thus likely supports color), and checks which ... Missing:  anstyle  | Show results with:",
+    "host_name": "docs.rs",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://crates.io/crates/anstyle-owo-colors",
+    "name": "anstyle-owo-colors - crates.io: Rust Package Registry",
+    "snippet": "Adapt between owo-colors and anstyle. #ansi · #color · #owo-colors · #terminal · Readme · Code · 13 Versions · Dependencies · Dependents ... Missing:  NO_COLOR  standard",
+    "host_name": "crates.io",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://rust-cli-recommendations.sunshowers.io/managing-colors-in-rust.html",
+    "name": "Managing colors in Rust - Rain's Rust CLI recommendations",
+    "snippet": "Managing colors in Rust. There are many Rust libraries for managing terminal colors. You should use owo-colors because it is the only library I've found ... Missing:  anstyle  NO_COLOR",
+    "host_name": "rust-cli-recommendations.sunshowers.io",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://difftastic.wilfred.me.uk/rustdoc/owo_colors/index.html",
+    "name": "owo_colors - Rust - Difftastic",
+    "snippet": "Supports NO_COLOR / FORCE_COLOR environment variables, checks if it's a tty, checks if it's running in CI (and thus likely supports color), and checks which ...",
+    "host_name": "difftastic.wilfred.me.uk",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://medium.com/journey-to-rust/production-grade-is-hard-8372875cbb3c",
+    "name": "Production grade is hard. Real colors on real terminals",
+    "snippet": "Colored support automatic detection of NO_COLOR , so did I got a production grade 'red' message? Nope foo (colored output in stderr). but foo > ... Missing:  anstyle  standard",
+    "host_name": "medium.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html",
+    "name": "Password Storage - OWASP Cheat Sheet Series",
+    "snippet": "To sum up our recommendations: Use Argon2id with a minimum configuration of 19 MiB of memory, an iteration count of 2, and 1 degree of parallelism.",
+    "host_name": "cheatsheetseries.owasp.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.reddit.com/r/Bitwarden/comments/1c2xmfr/argon2id_defaults_are_much_higher_than_owasp",
+    "name": "Argon2id defaults are much higher than OWASP  - Reddit",
+    "snippet": "The OWASP Password Storage Cheat Sheet says: Use Argon2id with a minimum configuration of 19 MiB of memory, an iteration count of 2, and 1 ...",
+    "host_name": "www.reddit.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://shattered.io/argon2-vs-scrypt-2026",
+    "name": "Argon2 vs scrypt: 19MB vs 128MB, OWASP Picks One [2026]",
+    "snippet": "Argon2id needs ~19MB, scrypt needs ~128MB to hit OWASP's password baseline. RFC 9106 vs RFC 7914 specs, benchmarks, and a migration guide.",
+    "host_name": "shattered.io",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://bellatorcyber.com/blog/best-password-hashing-algorithms-of-2023",
+    "name": "Password Hashing Algorithms in 2026: Argon2id, bcrypt & scrypt",
+    "snippet": "OWASP recommends Argon2id with minimum 19 MiB memory and 2 iterations, though security-conscious implementations should use 128 MiB memory ...",
+    "host_name": "bellatorcyber.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://guptadeepak.com/hash-lab/algorithms/argon2id",
+    "name": "Argon2id · Hash Lab - Deepak Gupta",
+    "snippet": "Argon2id is the recommended password-hashing function in OWASP's 2025 cheatsheet, in NIST SP 800-63B, and in essentially every other modern ...",
+    "host_name": "guptadeepak.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://security.stackexchange.com/questions/265372/what-argon2id-parameters-should-i-adjust",
+    "name": "What argon2id parameters should I adjust [closed]",
+    "snippet": "I want to find the optimized parameters. Should I favor Iterations or Memory? The total hashing time will still be less than 1 that means ...",
+    "host_name": "security.stackexchange.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

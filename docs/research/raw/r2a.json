@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://www.reddit.com/r/rust/comments/1iyhn1c/comfytableterminal_tables_that_just_work_v714",
+    "name": "[comfy-table]Terminal tables that just work. v7.1.4 released",
+    "snippet": "tables of Rust structs. Tabled [v0.5.0] - An easy to Comfy-table: A young library for building beautiful tables with automatic content wrapping Missing:  crate  comparison",
+    "host_name": "www.reddit.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com/zhiburt/tabled",
+    "name": "An easy to use library for pretty print tables of Rust  - GitHub",
+    "snippet": "To print a list of structs or enums as a table, there are 2 ways. Using a builder pattern to build a table step by step. Implement a Tabled trait for your type.",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.rs/comfy-table",
+    "name": "comfy_table - Rust - Docs.rs",
+    "snippet": "Comfy-table is designed as a library for building beautiful terminal tables, while being easy to use. Pretty much every part of the table is customizable ( ... Missing:  tabled  | Show results with:",
+    "host_name": "docs.rs",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://crates.io/crates/tabled/0.9.0",
+    "name": "tabled - crates.io: Rust Package Registry",
+    "snippet": "An easy to use library for pretty print tables of Rust `struct`s and `enum`s. GNOME terminal and Alacritty terminal handles it correctly.",
+    "host_name": "crates.io",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://lib.rs/command-line-interface",
+    "name": "Command-line interface — list of Rust libraries/crates // Lib.rs",
+    "snippet": "Crates to help create command line interfaces, such as argument parsers, line-editing, or output coloring and formatting. Build beautiful tables. Supports ...",
+    "host_name": "lib.rs",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.libhunt.com/compare-csview-vs-comfy-table",
+    "name": "csview vs comfy-table - compare differences and reviews?",
+    "snippet": "comfy-table is a crate designed to facilitate tables that look pretty in the terminal. Comfy-table: Build beautiful terminal tables with automatic content ...",
+    "host_name": "www.libhunt.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  }
+]

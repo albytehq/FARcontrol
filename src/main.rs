@@ -8,6 +8,7 @@ mod error;
 mod exec;
 mod files;
 mod keyring;
+mod out;
 mod policy;
 mod server;
 mod state;
@@ -22,12 +23,16 @@ use std::path::PathBuf;
 #[command(
     name = "frtrol",
     version,
-    about = "FARcontrol 1.0.0 — approval-gated control plane for external AI agents (authentication ≠ authorization)"
+    about = "FARcontrol 1.1.0 — approval-gated control plane for external AI agents (authentication ≠ authorization)"
 )]
 struct Cli {
     /// Data directory (state, tokens, config). Default: ~/.farcontrol
     #[arg(long, global = true, env = "FARCONTROL_HOME", hide = true)]
     data_dir: Option<PathBuf>,
+
+    /// Machine-readable JSON output (ADR-0026: every command, stable schema, no styling)
+    #[arg(long, global = true, env = "FARCONTROL_JSON")]
+    json: bool,
 
     #[command(subcommand)]
     cmd: Option<Cmd>,
@@ -79,6 +84,13 @@ enum Cmd {
     },
     /// Rotate the agent token (the old token dies immediately)
     Rotate,
+    /// Manage agent devices — register, lock, rotate passwords (ADR-0025)
+    Device {
+        #[command(subcommand)]
+        cmd: DeviceCmd,
+    },
+    /// Print the daemon cert fingerprint (TOFU out-of-band verification)
+    Fingerprint,
     /// Show recent audit events
     Audit {
         #[arg(long, default_value_t = 50)]
@@ -105,9 +117,12 @@ enum Cmd {
         /// Base URL of the FARcontrol agent API [env: FARCONTROL_URL]
         #[arg(long, env = "FARCONTROL_URL")]
         url: Option<String>,
-        /// Agent token [env: FARCONTROL_TOKEN]
+        /// Agent token (legacy v1.0 flow) [env: FARCONTROL_TOKEN]
         #[arg(long, env = "FARCONTROL_TOKEN")]
         token: Option<String>,
+        /// Device id — signs as X-Far-Device [env: FARCONTROL_DEVICE]
+        #[arg(long, env = "FARCONTROL_DEVICE")]
+        device: Option<String>,
         /// HTTP timeout in seconds
         #[arg(long, default_value_t = 60)]
         timeout_secs: u64,
@@ -120,9 +135,46 @@ enum Cmd {
 }
 
 #[derive(Subcommand)]
+enum DeviceCmd {
+    /// Register a device → prints device id + password (shown once).
+    /// e.g. frtrol device add office-laptop
+    Add {
+        /// Owner-chosen label for the device (1–64 chars)
+        name: String,
+    },
+    /// List registered devices
+    List,
+    /// Lock a device — login disabled, key rotated, its sessions revoked
+    Lock {
+        id: String,
+    },
+    /// Unlock a device — login re-enabled
+    Unlock {
+        id: String,
+    },
+    /// Rotate a device password (+ its key) — forces re-login
+    Passwd {
+        id: String,
+    },
+    /// Remove a device — key destroyed, its sessions revoked
+    Remove {
+        id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum AgentCmd {
     /// Check connectivity + authentication
     Ping,
+    /// Log a device in: password → device key (TOFU-captures the server cert on
+    /// first connect). e.g. frtrol agent login FAR-7K2M-QX94
+    Login {
+        /// Device id from 'frtrol device add' (FAR-XXXX-XXXX)
+        device_id: String,
+        /// Strict TOFU: abort on fingerprint mismatch (before sending the password)
+        #[arg(long)]
+        expect_fp: Option<String>,
+    },
     /// Ask for a session grant. e.g. frtrol agent request myai full_access 12 fix the nginx
     Request {
         /// Agent name shown to the owner (default: agent)
@@ -246,14 +298,17 @@ fn main() {
 fn quick_guide() {
     println!("FARcontrol {} — the AI asks, you approve, access expires", env!("CARGO_PKG_VERSION"));
     println!();
-    println!("  you   : frtrol start                       (run it, that is all)");
-    println!("  agent : frtrol agent request myai full_access 12 fix the nginx");
+    println!("  you   : frtrol start                        (run it, that is all)");
+    println!("  you   : frtrol device add myagent           (→ device id + password)");
+    println!("  agent : frtrol agent login FAR-XXXX-XXXX    (needs ONLY id + password)");
+    println!("  agent : frtrol agent request myai terminal_only 6 fix the nginx");
     println!("  you   : frtrol list   →   frtrol approve req_xxx");
     println!("  agent : frtrol agent exec ses_xxx ls -la");
     println!();
-    println!("  frtrol status | frtrol deny req_xxx | frtrol revoke ses_xxx | frtrol audit");
+    println!("  frtrol status | device list | deny req_xxx | revoke ses_xxx | audit");
     println!("  frtrol doctor | frtrol panic   (health checks / emergency stop)");
-    println!("  frtrol agent ping | request | status | exec | term | read | write | ls | revoke");
+    println!("  frtrol agent ping | login | request | status | exec | term | read | write | ls | revoke");
+    println!("  add --json to any command for machine-readable output");
     println!("  web console: the URL that 'frtrol start' prints — login with the admin token");
     println!();
     println!("  full help: frtrol --help");
@@ -280,13 +335,22 @@ fn run(cli: Cli) -> anyhow::Result<i32> {
             cli_admin::init(&data_dir)?;
             Ok(0)
         }
-        Some(Cmd::Status { json }) => cli_admin::status(&data_dir, json).map(|_| 0),
-        Some(Cmd::List { json }) => cli_admin::list(&data_dir, json).map(|_| 0),
+        Some(Cmd::Status { .. }) => cli_admin::status(&data_dir, cli.json).map(|_| 0),
+        Some(Cmd::List { .. }) => cli_admin::list(&data_dir, cli.json).map(|_| 0),
         Some(Cmd::Approve { id, hours }) => cli_admin::approve(&data_dir, &id, hours).map(|_| 0),
         Some(Cmd::Deny { id, reason }) => cli_admin::deny(&data_dir, &id, &reason).map(|_| 0),
         Some(Cmd::Revoke { id, reason }) => cli_admin::revoke(&data_dir, &id, &reason).map(|_| 0),
         Some(Cmd::Rotate) => cli_admin::rotate(&data_dir).map(|_| 0),
-        Some(Cmd::Audit { limit }) => cli_admin::audit(&data_dir, limit).map(|_| 0),
+        Some(Cmd::Device { cmd }) => match cmd {
+            DeviceCmd::Add { name } => cli_admin::device_add(&data_dir, &name).map(|_| 0),
+            DeviceCmd::List => cli_admin::device_list(&data_dir, cli.json).map(|_| 0),
+            DeviceCmd::Lock { id } => cli_admin::device_lock(&data_dir, &id).map(|_| 0),
+            DeviceCmd::Unlock { id } => cli_admin::device_unlock(&data_dir, &id).map(|_| 0),
+            DeviceCmd::Passwd { id } => cli_admin::device_passwd(&data_dir, &id).map(|_| 0),
+            DeviceCmd::Remove { id } => cli_admin::device_remove(&data_dir, &id).map(|_| 0),
+        },
+        Some(Cmd::Fingerprint) => cli_admin::fingerprint(&data_dir, cli.json).map(|_| 0),
+        Some(Cmd::Audit { limit }) => cli_admin::audit(&data_dir, limit, cli.json).map(|_| 0),
         Some(Cmd::Panic { reason }) => cli_admin::panic_stop(&data_dir, &reason.unwrap_or_else(|| "owner panic".into())).map(|_| 0),
         Some(Cmd::Doctor) => cli_admin::doctor(&data_dir),
         Some(Cmd::Backup { out }) => {
@@ -299,8 +363,8 @@ fn run(cli: Cli) -> anyhow::Result<i32> {
         Some(Cmd::Restore { archive }) => {
             cli_admin::restore(&data_dir, std::path::Path::new(&archive)).map(|_| 0)
         }
-        Some(Cmd::Agent { url, token, timeout_secs, raw, cmd }) => {
-            agent_client::run(&data_dir, url, token, timeout_secs, raw, cmd)
+        Some(Cmd::Agent { url, token, device, timeout_secs, raw, cmd }) => {
+            agent_client::run(&data_dir, url, token, device, timeout_secs, raw, cmd)
         }
     }
 }

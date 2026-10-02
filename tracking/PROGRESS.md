@@ -2,6 +2,7 @@
 
 The single source of truth for status. **Update only with evidence.**
 
+> **2026-10-02 — v1.1.0 DELIVERED & VERIFIED (104 unit + 231 e2e + 9 mutation checks, clippy 0, cargo-audit 0 CVE, secret-scan CLEAN, SBOM 239 crates, browser-tested console v2 + VLM review 8/10 — device authentication (ADR-0025: FAR-XXXX-XXXX + Argon2 password, fingerprint TOFU, legacy migration), CLI v2 gh-style (ADR-0026), web console v2 total redesign (ADR-0027); 5 research notes; bug nyata ditemukan & difix: 6 deadlock + unthrottled rejection path + doctor v1.1 + backup/restore keyring map).**
 > **2026-10-02 — v1.0.0 RELEASED & VERIFIED (78 unit + 172 e2e, clippy 0, 6 mutation checks total, GPG-signed artifacts — stress-panic §97-14 + assurance rows closed-by-verification; ADR-0024).**
 > **2026-10-02 — v0.9.0 DELIVERED & VERIFIED (78 unit + 161 e2e, clippy 0, 3 mutation checks — progressive auth backoff SC-01 + startup config validation SC-02 + OS keyring ID-04; D-044/ADR-0023).**
 > **2026-10-02 — v0.8.0 DELIVERED & VERIFIED (68 unit + 147 e2e, clippy 0, 4 mutation checks — agent identity catalog + §66 exit codes + §45 --json + X-Far-Proto + audit retention; D-042/D-043).**

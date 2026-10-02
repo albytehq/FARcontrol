@@ -5,298 +5,744 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FARcontrol — owner console</title>
 <style>
-  :root { color-scheme: dark; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 15px/1.45 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
-         background: #0d1117; color: #e6edf3; }
-  header { display: flex; justify-content: space-between; align-items: center;
-           padding: 14px 22px; border-bottom: 1px solid #21262d; flex-wrap: wrap; gap: 8px; }
-  header h1 { font-size: 16px; margin: 0; letter-spacing: 1px; }
-  header h1 b { color: #58a6ff; }
-  #meta { color: #8b949e; font-size: 12px; }
-  main { max-width: 1000px; margin: 0 auto; padding: 22px; }
-  section { margin-bottom: 34px; }
-  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: #8b949e;
-       border-bottom: 1px solid #21262d; padding-bottom: 6px; }
-  .card { background: #161b22; border: 1px solid #21262d; border-radius: 8px;
-          padding: 14px 16px; margin: 10px 0; }
-  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
-  .row .grow { flex: 1 1 240px; }
-  .k { color: #8b949e; font-size: 12px; }
-  .v { color: #e6edf3; }
-  .pill { display: inline-block; padding: 1px 9px; border-radius: 99px; font-size: 12px; }
-  .pill.scope-to { background: #1f3a5f; color: #79c0ff; }
-  .pill.scope-fa { background: #3d2d00; color: #e3b341; }
-  .pill.st-active { background: #123d23; color: #56d364; }
-  .pill.st-dead { background: #490202; color: #f85149; }
-  .pill.st-pending { background: #3d2d00; color: #e3b341; }
-  button { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 6px;
-           padding: 7px 14px; font: inherit; cursor: pointer; }
-  button:hover { background: #30363d; }
-  button.ok { background: #196c2e; border-color: #238636; }
-  button.ok:hover { background: #238636; }
-  button.no { background: #6e2229; border-color: #8a2c2c; }
-  button.no:hover { background: #8a2c2c; }
-  button.panic { background: #6e1111; border-color: #a02121; font-weight: bold; }
-  button.panic:hover { background: #a02121; }
-  select, input[type=password] { background: #0d1117; color: #e6edf3; border: 1px solid #30363d;
-           border-radius: 6px; padding: 7px 9px; font: inherit; }
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  th, td { text-align: left; padding: 5px 9px; border-bottom: 1px solid #21262d; vertical-align: top; }
-  th { color: #8b949e; font-weight: normal; }
-  #login { max-width: 380px; margin: 12vh auto; }
-  #login .card { padding: 26px; }
-  #login h2 { border: 0; }
-  #err { color: #f85149; min-height: 20px; margin: 10px 0; }
-  #panicbar { position: fixed; right: 22px; bottom: 22px; }
-  .note { color: #8b949e; font-size: 12px; }
-  .hidden { display: none !important; }
+/* v1.1 console (ADR-0027, research R3/R5) — dark-first, one file, zero external assets. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0e14; --panel: #11151f; --panel2: #161b27; --border: #232a3a;
+  --text: #e6e9f0; --dim: #8b93a7; --accent: #4f8cff; --accent2: #1d3153;
+  --ok: #34d399; --ok2: #0f2e22; --warn: #fbbf24; --warn2: #33290b;
+  --danger: #f87171; --danger2: #3a1216; --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; font: 14px/1.5 var(--sans); background: var(--bg); color: var(--text); }
+
+/* ---------- login ---------- */
+#login { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
+#login .box { width: 380px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 30px; box-shadow: 0 18px 50px rgba(0,0,0,.45); }
+#login .mark { font: 700 22px/1 var(--mono); letter-spacing: 2px; margin-bottom: 4px; }
+#login .mark b { color: var(--accent); }
+#login .sub { color: var(--dim); font-size: 12.5px; margin: 0 0 22px; }
+#login label { display: block; color: var(--dim); font-size: 12px; margin-bottom: 6px; }
+input[type=password], input[type=text] { width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 13px var(--mono); }
+input:focus { outline: none; border-color: var(--accent); }
+#err { color: var(--danger); min-height: 18px; font-size: 12.5px; margin: 10px 0; }
+
+/* ---------- app frame ---------- */
+#app { display: none; grid-template-columns: 220px 1fr; min-height: 100vh; }
+#app.on { display: grid; }
+aside { background: var(--panel); border-right: 1px solid var(--border); padding: 20px 14px;
+  display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
+aside .mark { font: 700 17px/1.2 var(--mono); letter-spacing: 2px; padding: 4px 10px 14px; }
+aside .mark b { color: var(--accent); }
+aside .mark span { display: block; color: var(--dim); font-size: 10.5px; letter-spacing: 1px; margin-top: 4px; }
+.nav { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 8px;
+  color: var(--dim); cursor: pointer; font-size: 13.5px; border: 1px solid transparent; user-select: none; }
+.nav:hover { color: var(--text); background: var(--panel2); }
+.nav.on { color: var(--text); background: var(--accent2); border-color: #2b4a80; }
+.nav .ico { width: 18px; text-align: center; font-family: var(--mono); }
+.nav .badge { margin-left: auto; background: var(--accent2); color: var(--accent); border-radius: 99px;
+  font-size: 11px; padding: 0 8px; min-width: 20px; text-align: center; font-family: var(--mono); }
+aside .foot { margin-top: auto; padding: 10px; color: var(--dim); font-size: 11px; border-top: 1px solid var(--border); }
+main { padding: 26px 30px 60px; max-width: 1080px; }
+.page { display: none; }
+.page.on { display: block; }
+h1 { font: 600 19px/1.3 var(--sans); margin: 0 0 4px; }
+.sub { color: var(--dim); font-size: 12.5px; margin: 0 0 22px; }
+
+/* ---------- components ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
+.kpi { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+.kpi .n { font: 700 26px/1 var(--mono); }
+.kpi .l { color: var(--dim); font-size: 11.5px; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.kpi.warn .n { color: var(--warn); } .kpi.ok .n { color: var(--ok); } .kpi.acc .n { color: var(--accent); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 14px; }
+.card .title { color: var(--dim); font-size: 11.5px; letter-spacing: 1.5px; text-transform: uppercase; margin: 0 0 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th { color: var(--dim); font-weight: 500; text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 11px; letter-spacing: 1px; text-transform: uppercase; }
+td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; font-family: var(--mono); font-size: 12px; }
+td.sans { font-family: var(--sans); }
+tr:last-child td { border-bottom: 0; }
+.empty { color: var(--dim); font-size: 12.5px; padding: 18px 6px; }
+.mono { font-family: var(--mono); }
+.dim { color: var(--dim); }
+.ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--danger); }
+
+.pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-family: var(--mono); }
+.pill.scope-to { background: var(--accent2); color: var(--accent); }
+.pill.scope-fa { background: var(--warn2); color: var(--warn); }
+.pill.st-active { background: var(--ok2); color: var(--ok); }
+.pill.st-revoked { background: var(--danger2); color: var(--danger); }
+.pill.st-expired { background: #1d2129; color: var(--dim); }
+.pill.st-pending { background: var(--warn2); color: var(--warn); }
+.pill.dev { background: #1d2129; color: var(--dim); }
+
+button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 14px; font: 12.5px var(--sans); cursor: pointer; transition: background .15s; }
+button:hover { background: #1c2330; }
+button.primary { background: var(--accent2); border-color: #2b4a80; color: #cfe0ff; }
+button.primary:hover { background: #234a8a; }
+button.good { background: var(--ok2); border-color: #1a5c40; color: var(--ok); }
+button.good:hover { background: #16452f; }
+button.danger { background: var(--danger2); border-color: #6e2430; color: var(--danger); }
+button.danger:hover { background: #571a22; }
+button.ghost { background: transparent; border-color: transparent; color: var(--dim); }
+button.ghost:hover { color: var(--text); background: var(--panel2); }
+button.mini { padding: 4px 10px; font-size: 11.5px; }
+select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
+  padding: 7px 9px; font: 12.5px var(--sans); }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* device cards */
+.devcard { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
+.devcard .id { font: 600 15px var(--mono); color: var(--accent); cursor: pointer; }
+.devcard .id:hover { text-decoration: underline; }
+.devrow { display: flex; gap: 14px; flex-wrap: wrap; color: var(--dim); font-size: 12px; margin-top: 8px; }
+
+/* modal + toast */
+#modalwrap { position: fixed; inset: 0; background: rgba(5,8,12,.72); display: none;
+  align-items: center; justify-content: center; z-index: 50; padding: 20px; }
+#modalwrap.on { display: flex; }
+#modal { width: 460px; max-width: 100%; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: 24px; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
+#modal h2 { font: 600 16px var(--sans); margin: 0 0 6px; }
+#modal .body { color: var(--dim); font-size: 13px; margin: 10px 0 18px; }
+.secret { background: var(--bg); border: 1px dashed var(--border); border-radius: 8px;
+  padding: 10px 12px; font: 13px var(--mono); color: var(--warn); margin: 8px 0; word-break: break-all; }
+.secret .lab { color: var(--dim); font-size: 10.5px; letter-spacing: 1px; text-transform: uppercase; }
+#toast { position: fixed; right: 20px; bottom: 20px; z-index: 60; display: flex; flex-direction: column; gap: 8px; }
+.toast { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 10px 14px; font-size: 12.5px; max-width: 360px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4); animation: fadein .18s ease; }
+.toast.good { border-left-color: var(--ok); }
+.toast.bad { border-left-color: var(--danger); }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* danger zone */
+.panicbox { background: linear-gradient(180deg, #1a0d10, var(--panel)); border: 1px solid #54202a;
+  border-radius: 12px; padding: 26px; text-align: center; }
+.panicbox h2 { color: var(--danger); font: 700 18px var(--sans); margin: 0 0 8px; }
+.panicbox p { color: var(--dim); font-size: 13px; margin: 0 0 18px; }
+.panicbox button { font-size: 15px; padding: 12px 34px; font-weight: 700; }
+
+.chainchip { display: inline-flex; gap: 8px; align-items: center; font-size: 11.5px;
+  border: 1px solid var(--border); border-radius: 99px; padding: 3px 12px; color: var(--dim); }
+.chainchip .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.chainchip.bad .led { background: var(--danger); }
+.chainchip.bad { color: var(--danger); border-color: #6e2430; }
+
+@media (max-width: 860px) {
+  #app.on { grid-template-columns: 64px 1fr; }
+  aside .mark span, .nav .t, aside .foot .full { display: none; }
+  aside .mark { font-size: 13px; padding: 4px 4px 14px; text-align: center; }
+  .nav { justify-content: center; padding: 9px 4px; }
+  main { padding: 18px 14px 50px; }
+  .grid2 { grid-template-columns: 1fr; }
+}
 </style>
 </head>
 <body>
-<header>
-  <h1><b>FAR</b>CONTROL <span id="ver" class="k"></span></h1>
-  <div id="meta"></div>
-  <div>
-    <button id="logout" class="hidden">log out</button>
-  </div>
-</header>
 
+<!-- ============ login ============ -->
 <div id="login">
-  <div class="card">
-    <h2>Owner login</h2>
-    <p class="note">The password is the admin token — shown by <b>frtrol start</b> / stored in
-       the admin-token file (0600). The console is loopback-only.</p>
-    <input type="password" id="pw" placeholder="admin token" autocomplete="off" style="width:100%">
+  <div class="box">
+    <div class="mark"><b>FAR</b>CONTROL</div>
+    <p class="sub">owner console — loopback only, approval-gated access for AI agents</p>
+    <label for="pw">admin token</label>
+    <input type="password" id="pw" placeholder="the token 'frtrol start' printed" autocomplete="off">
     <div id="err"></div>
-    <button id="loginbtn" class="ok" style="width:100%">log in</button>
+    <button id="loginbtn" class="primary" style="width:100%">log in</button>
   </div>
 </div>
 
-<main id="dash" class="hidden">
-  <section>
-    <h2>Pending requests <span id="pcount"></span></h2>
-    <div id="pending"><p class="note">none — the gate is closed</p></div>
-  </section>
+<!-- ============ app ============ -->
+<div id="app">
+  <aside>
+    <div class="mark"><b>FAR</b>CONTROL<span id="ver"></span></div>
+    <div class="nav on" data-page="dash"><span class="ico">◧</span><span class="t">Dashboard</span><span class="badge" id="navpending"></span></div>
+    <div class="nav" data-page="sessions"><span class="ico">≡</span><span class="t">Sessions</span><span class="badge" id="navsessions"></span></div>
+    <div class="nav" data-page="devices"><span class="ico">▤</span><span class="t">Devices</span><span class="badge" id="navdevices"></span></div>
+    <div class="nav" data-page="audit"><span class="ico">☰</span><span class="t">Audit</span></div>
+    <div class="nav" data-page="danger"><span class="ico">!</span><span class="t">Danger</span></div>
+    <div class="foot">
+      <div id="footline"></div>
+      <button id="logout" class="ghost mini" style="margin-top:8px">log out</button>
+    </div>
+  </aside>
+  <main>
+    <!-- DASHBOARD -->
+    <div class="page on" id="page-dash">
+      <h1>Dashboard</h1>
+      <p class="sub" id="dashsub">the AI asks, you approve, access expires</p>
+      <div class="kpis" id="kpis"></div>
+      <div class="card"><div class="title">Pending requests</div><div id="pending"></div></div>
+      <div class="card"><div class="title">Active sessions</div><div id="live"></div></div>
+      <div class="card"><div class="title">Recent audit</div><div id="recent"></div></div>
+    </div>
 
-  <section>
-    <h2>Sessions</h2>
-    <div id="sessions"><p class="note">none yet</p></div>
-  </section>
+    <!-- SESSIONS -->
+    <div class="page" id="page-sessions">
+      <h1>Sessions</h1>
+      <p class="sub">every grant ever issued — revoke kills access immediately</p>
+      <div class="card"><div id="seslist"></div></div>
+    </div>
 
-  <section>
-    <h2>Audit trail (last 50)</h2>
-    <table id="audit"><thead>
-      <tr><th>time</th><th>actor</th><th>action</th><th>subject</th><th>detail</th></tr>
-    </thead><tbody></tbody></table>
-  </section>
-</main>
+    <!-- DEVICES -->
+    <div class="page" id="page-devices">
+      <h1>Devices</h1>
+      <p class="sub">an agent device carries only its id + password — login rotates its key</p>
+      <div class="card">
+        <div class="title">Register a device</div>
+        <div class="actions">
+          <input type="text" id="devname" placeholder="device name (e.g. office-laptop)" style="flex:1;min-width:220px">
+          <button id="devadd" class="primary">add device</button>
+        </div>
+      </div>
+      <div id="devlist"></div>
+    </div>
 
-<div id="panicbar" class="hidden">
-  <button class="panic" id="panicbtn">PANIC — kill all access</button>
+    <!-- AUDIT -->
+    <div class="page" id="page-audit">
+      <h1>Audit</h1>
+      <p class="sub">tamper-evident hash chain — security-relevant actions only</p>
+      <div class="actions" style="margin-bottom:14px">
+        <input type="text" id="auditq" placeholder="search actor / action / subject…" style="flex:1;min-width:200px">
+        <select id="auditlvl">
+          <option value="">all events</option>
+          <option value="auth">auth events</option>
+          <option value="device">device events</option>
+          <option value="session">session events</option>
+          <option value="owner">owner decisions</option>
+          <option value="system">system events</option>
+        </select>
+        <span class="chainchip" id="chainchip"><span class="led"></span><span id="chaintext"></span></span>
+      </div>
+      <div class="card"><div id="auditlist"></div></div>
+    </div>
+
+    <!-- DANGER -->
+    <div class="page" id="page-danger">
+      <h1>Danger zone</h1>
+      <p class="sub">when in doubt, panic — everything dies, nothing is lost</p>
+      <div class="panicbox">
+        <h2>EMERGENCY STOP</h2>
+        <p>revokes every session · expires every pending request · kills every terminal ·<br>
+           rotates every device key (all agents must re-login)</p>
+        <button id="panicbtn" class="danger">PANIC — kill all access</button>
+      </div>
+      <div class="card" style="margin-top:18px">
+        <div class="title">Fingerprint</div>
+        <div class="mono dim" id="fp"></div>
+        <div class="dim" style="font-size:11.5px;margin-top:6px">compare with the fingerprint an agent shows at login (SSH-style TOFU)</div>
+      </div>
+    </div>
+  </main>
 </div>
+
+<!-- modal + toast -->
+<div id="modalwrap"><div id="modal"></div></div>
+<div id="toast"></div>
 
 <script>
 "use strict";
-// FARcontrol web console. SECURITY: every dynamic value below is rendered with
-// textContent only — no HTML-string sink anywhere — so a hostile agent_name /
-// reason string cannot execute (XSS is structurally prevented, ADR-0017).
-var $ = function (id) { return document.getElementById(id); };
-var UIHDR = { "X-Far-Ui": "1", "Content-Type": "application/json" };
+/* ADR-0017/0027 security architecture, unchanged: one self-contained file, no
+   external assets, no HTML-string sinks (every render is DOM + textContent),
+   CSRF = JS-only X-Far-Ui header, SameSite=Strict cookie, login feeds backoff. */
 
-function el(tag, cls, text) {
-  var n = document.createElement(tag);
-  if (cls) n.className = cls;
-  if (text !== undefined && text !== null) n.textContent = String(text);
-  return n;
-}
-
-function fmtRemaining(sec) {
-  if (sec === null || sec === undefined) return "";
-  if (sec <= 0) return "expired";
-  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
-  return h > 0 ? h + "h" + m + "m" : m + "m";
-}
-
-function fmtTime(ts) {
-  if (!ts) return "";
-  var d = new Date(ts * 1000);
-  return d.toISOString().replace("T", " ").replace(".000Z", " UTC");
-}
+var UIHDR = { "Content-Type": "application/json", "X-Far-Ui": "1" };
+var POLL = null;
+var ST = null;          // last /ui/state payload
+var PAGE = "dash";
 
 function api(path, body) {
   return fetch(path, {
-    method: body ? "POST" : "GET",
+    method: body === undefined ? "GET" : "POST",
     headers: UIHDR,
     credentials: "same-origin",
-    body: body ? JSON.stringify(body) : undefined
+    body: body === undefined ? undefined : JSON.stringify(body),
   }).then(function (r) {
-    if (r.status === 401) { showLogin(); throw new Error("unauthorized"); }
-    return r.json();
-  }).catch(function (e) { throw e; });
-}
-
-function showLogin() {
-  $("login").classList.remove("hidden");
-  $("dash").classList.add("hidden");
-  $("panicbar").classList.add("hidden");
-  $("logout").classList.add("hidden");
-}
-
-function showDash() {
-  $("login").classList.add("hidden");
-  $("dash").classList.remove("hidden");
-  $("panicbar").classList.remove("hidden");
-  $("logout").classList.remove("hidden");
-}
-
-// ---------- login ----------
-function doLogin() {
-  $("err").textContent = "";
-  var pw = $("pw").value;
-  fetch("/ui/login", { method: "POST", headers: UIHDR, credentials: "same-origin",
-                       body: JSON.stringify({ password: pw }) })
-    .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-    .then(function (res) {
-      if (!res.ok) {
-        $("err").textContent = (res.j && res.j.error && res.j.error.message) || "login failed";
-        return;
-      }
-      $("pw").value = "";
-      showDash();
-      refresh();
-    })
-    .catch(function () { $("err").textContent = "cannot reach the daemon"; });
-}
-
-// ---------- dashboard render ----------
-function renderPending(list) {
-  var host = $("pending");
-  host.textContent = "";
-  $("pcount").textContent = list.length ? "(" + list.length + ")" : "";
-  if (!list.length) { host.appendChild(el("p", "note", "none — the gate is closed")); return; }
-  list.forEach(function (r) {
-    var card = el("div", "card");
-    var row = el("div", "row");
-    var g = el("div", "grow");
-    g.appendChild(el("div", "", r.agent_name)).className = "v";
-    // AG-03: identity is a declaration — the UI must never imply vendor verification.
-    if (r.agent_provider && r.agent_model) {
-      g.appendChild(el("div", "k", r.agent_provider + "/" + r.agent_model + " (declared — not verified)"));
-    }
-    g.appendChild(el("div", "k", r.id + " · wants " + r.requested_hours + "h · " + (r.reason || "no reason")));
-    var sc = el("span", "pill " + (r.scope === "full_access" ? "scope-fa" : "scope-to"), r.scope);
-    var line = el("div", "row");
-    line.appendChild(sc);
-    line.appendChild(el("span", "k", " " + fmtTime(r.created_at)));
-    g.appendChild(line);
-    row.appendChild(g);
-
-    var hours = el("select");
-    [r.requested_hours, 5, 12, 24, 48, 72].forEach(function (h) {
-      var o = el("option", null, h + "h");
-      o.value = h;
-      if (h === r.requested_hours) o.selected = true;
-      hours.appendChild(o);
+    return r.json().catch(function () { return {}; }).then(function (j) {
+      if (!r.ok) { throw new Error((j.error && j.error.message) || ("HTTP " + r.status)); }
+      return j;
     });
-    row.appendChild(el("span", "k", "grant "));
-    row.appendChild(hours);
-
-    var bYes = el("button", "ok", "APPROVE");
-    bYes.onclick = function () {
-      api("/ui/approve", { request_id: r.id, hours: parseFloat(hours.value) })
-        .then(refresh).catch(function () {});
-    };
-    var bNo = el("button", "no", "DENY");
-    bNo.onclick = function () {
-      api("/ui/deny", { request_id: r.id, reason: "denied from web console" })
-        .then(refresh).catch(function () {});
-    };
-    row.appendChild(bYes);
-    row.appendChild(bNo);
-    card.appendChild(row);
-    host.appendChild(card);
   });
 }
 
-function renderSessions(list) {
-  var host = $("sessions");
-  host.textContent = "";
-  if (!list.length) { host.appendChild(el("p", "note", "none yet")); return; }
-  list.forEach(function (s) {
-    var active = s.effective_status === "active";
-    var card = el("div", "card");
-    var row = el("div", "row");
-    var g = el("div", "grow");
-    var name = el("div", "v", s.agent_name);
-    g.appendChild(name);
-    if (s.agent_provider && s.agent_model) {
-      g.appendChild(el("div", "k", s.agent_provider + "/" + s.agent_model + " (declared — not verified)"));
+/* ---------- tiny DOM kit: createElement + textContent only ---------- */
+function el(tag, cls, text) {
+  var e = document.createElement(tag);
+  if (cls) { e.className = cls; }
+  if (text !== undefined && text !== null) { e.textContent = text; }
+  return e;
+}
+function clear(n) { while (n.firstChild) { n.removeChild(n.firstChild); } }
+function pill(cls, text) { return el("span", "pill " + cls, text); }
+
+function toast(text, kind) {
+  var t = el("div", "toast" + (kind ? " " + kind : ""), text);
+  document.getElementById("toast").appendChild(t);
+  setTimeout(function () { t.remove(); }, 4200);
+}
+function copyBtn(getText, label) {
+  var b = el("button", "ghost mini", label || "copy");
+  b.addEventListener("click", function () {
+    var txt = (typeof getText === "function") ? getText() : getText;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function () { toast("copied to clipboard", "good"); },
+                                              function () { toast("copy failed — select it manually", "bad"); });
     }
-    g.appendChild(el("div", "k", s.id + " · expires " + fmtTime(s.expires_at)));
-    var line = el("div", "row");
-    line.appendChild(el("span", "pill " + (s.scope === "full_access" ? "scope-fa" : "scope-to"), s.scope));
-    line.appendChild(el("span", "pill " + (active ? "st-active" : "st-dead"),
-                        active ? "active · " + fmtRemaining(s.seconds_remaining) : s.effective_status));
-    g.appendChild(line);
-    row.appendChild(g);
-    if (active) {
-      var b = el("button", "no", "REVOKE");
-      b.onclick = function () {
-        api("/ui/revoke", { session_id: s.id, reason: "revoked from web console" })
-          .then(refresh).catch(function () {});
-      };
-      row.appendChild(b);
-    }
-    card.appendChild(row);
-    host.appendChild(card);
   });
+  return b;
+}
+function modal(title, build, onclose) {
+  var wrap = document.getElementById("modalwrap");
+  var m = document.getElementById("modal");
+  clear(m);
+  m.appendChild(el("h2", null, title));
+  build(m);
+  var row = el("div", "actions");
+  row.style.marginTop = "18px";
+  row.style.justifyContent = "flex-end";
+  var close = el("button", null, "close");
+  close.addEventListener("click", function () { wrap.classList.remove("on"); if (onclose) onclose(); });
+  row.appendChild(close);
+  m.appendChild(row);
+  wrap.classList.add("on");
+}
+document.getElementById("modalwrap").addEventListener("click", function (ev) {
+  if (ev.target === this) { this.classList.remove("on"); }
+});
+
+/* ---------- time helpers ---------- */
+function ago(ts) {
+  if (!ts) { return "never"; }
+  var d = Math.floor(Date.now() / 1000) - ts;
+  if (d < 0) { d = 0; }
+  if (d < 60) { return "just now"; }
+  if (d < 3600) { return Math.floor(d / 60) + "m ago"; }
+  if (d < 86400) { return Math.floor(d / 3600) + "h ago"; }
+  return Math.floor(d / 86400) + "d ago";
+}
+function countdown(sec) {
+  if (sec === null || sec === undefined) { return ""; }
+  if (sec <= 0) { return "expired"; }
+  if (sec < 3600) { return Math.max(1, Math.floor(sec / 60)) + "m left"; }
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return h + "h " + m + "m left";
 }
 
-function renderAudit(events) {
-  var tb = $("audit").getElementsByTagName("tbody")[0];
-  tb.textContent = "";
-  events.forEach(function (e) {
-    var tr = el("tr");
-    tr.appendChild(el("td", "k", fmtTime(e.ts)));
-    tr.appendChild(el("td", null, e.actor || ""));
-    tr.appendChild(el("td", null, e.action || ""));
-    tr.appendChild(el("td", "k", e.subject || ""));
-    tr.appendChild(el("td", "k", e.detail || ""));
-    tb.appendChild(tr);
+/* ---------- login / logout ---------- */
+function showLogin() {
+  document.getElementById("app").classList.remove("on");
+  document.getElementById("login").style.display = "flex";
+  if (POLL) { clearInterval(POLL); POLL = null; }
+}
+function showApp() {
+  document.getElementById("login").style.display = "none";
+  document.getElementById("app").classList.add("on");
+  if (POLL) { clearInterval(POLL); }
+  POLL = setInterval(function () { refresh(); }, 3000);
+  refresh();
+}
+document.getElementById("loginbtn").addEventListener("click", doLogin);
+document.getElementById("pw").addEventListener("keydown", function (ev) {
+  if (ev.key === "Enter") { doLogin(); }
+});
+function doLogin() {
+  var pw = document.getElementById("pw").value;
+  document.getElementById("err").textContent = "";
+  fetch("/ui/login", {
+    method: "POST", headers: UIHDR, credentials: "same-origin",
+    body: JSON.stringify({ password: pw }),
+  }).then(function (r) {
+    return r.json().catch(function () { return {}; }).then(function (j) {
+      if (!r.ok) { throw new Error((j.error && j.error.message) || "login failed"); }
+      showApp();
+    });
+  }).catch(function (e) { document.getElementById("err").textContent = e.message || "login failed"; });
+}
+document.getElementById("logout").addEventListener("click", function () {
+  api("/ui/logout", {}).then(showLogin, showLogin);
+});
+
+/* ---------- navigation ---------- */
+Array.prototype.forEach.call(document.querySelectorAll(".nav"), function (n) {
+  n.addEventListener("click", function () { nav(n.dataset.page); });
+});
+function nav(page) {
+  PAGE = page;
+  Array.prototype.forEach.call(document.querySelectorAll(".nav"), function (n) {
+    n.classList.toggle("on", n.dataset.page === page);
   });
+  Array.prototype.forEach.call(document.querySelectorAll(".page"), function (p) {
+    p.classList.toggle("on", p.id === "page-" + page);
+  });
+  render();
 }
 
+/* ---------- state → render ---------- */
 function refresh() {
   api("/ui/state").then(function (st) {
-    $("ver").textContent = "v" + st.version;
-    $("meta").textContent =
-      "policy " + (st.policy ? st.policy.session_hours + "h sessions · exec " + st.policy.exec_timeout_s + "s · out " + st.policy.max_output_kib + "KiB · files " + st.policy.max_file_kib + "KiB" : "") +
-      (st.tls ? " · TLS" : " · no TLS");
-    renderPending(st.pending || []);
-    renderSessions(st.sessions || []);
-    renderAudit(st.audit || []);
-  }).catch(function () {});
+    ST = st;
+    render();
+  }, function (e) {
+    if (String(e.message).indexOf("admin") >= 0 || String(e.message).indexOf("401") >= 0) { showLogin(); }
+  });
 }
 
-// ---------- panic ----------
-$("panicbtn").onclick = function () {
-  if (window.confirm("PANIC revokes EVERY session, kills all terminals and rotates the agent token. Continue?")) {
-    api("/ui/panic", { reason: "panic from web console" }).then(refresh).catch(function () {});
+function render() {
+  if (!ST) { return; }
+  document.getElementById("ver").textContent = "v" + (ST.version || "?");
+  document.getElementById("footline").textContent =
+    (ST.tls ? "https · " : "http · ") + (ST.keyring_mode ? "kernel keyring" : "file secret store");
+  document.getElementById("dashsub").textContent =
+    "the AI asks, you approve, access expires — " + (ST.policy ? "sessions " + ST.policy.session_hours + "h" : "");
+
+  var pending = ST.pending || [], sessions = ST.sessions || [], devices = ST.devices || [], audit = ST.audit || [];
+  var live = sessions.filter(function (s) { return s.effective_status === "active"; });
+
+  document.getElementById("navpending").textContent = pending.length || "";
+  document.getElementById("navsessions").textContent = live.length || "";
+  document.getElementById("navdevices").textContent = devices.length || "";
+
+  /* KPI cards */
+  var k = document.getElementById("kpis");
+  clear(k);
+  [
+    { n: pending.length, l: "pending requests", cls: pending.length ? "warn" : "" },
+    { n: live.length, l: "active sessions", cls: live.length ? "ok" : "" },
+    { n: devices.length, l: "devices", cls: "acc" },
+    { n: audit.length, l: "audit events", cls: "" },
+  ].forEach(function (x) {
+    var c = el("div", "kpi " + x.cls);
+    c.appendChild(el("div", "n", String(x.n)));
+    c.appendChild(el("div", "l", x.l));
+    k.appendChild(c);
+  });
+
+  renderPending(pending);
+  renderSessions(live, document.getElementById("live"), true);
+  renderSessions(sessions, document.getElementById("seslist"), false);
+  renderDevices(devices);
+  renderAudit(audit);
+  document.getElementById("fp").textContent = ST.fingerprint || "(TLS disabled)";
+}
+
+/* ---------- pending requests (dashboard) ---------- */
+function renderPending(pending) {
+  var host = document.getElementById("pending");
+  clear(host);
+  if (!pending.length) {
+    host.appendChild(el("div", "empty", "✓ no pending requests — nothing is waiting on you."));
+    return;
   }
-};
+  pending.forEach(function (r) {
+    var card = el("div", "devcard");
+    var left = el("div");
+    var idrow = el("div", "mono", r.id + "  ");
+    idrow.appendChild(pill("scope-" + (r.scope === "full_access" ? "fa" : "to"), r.scope));
+    left.appendChild(idrow);
+    var who = el("div", "sans");
+    who.appendChild(el("b", null, r.agent ? r.agent.name : (r.agent_name || "agent")));
+    who.appendChild(el("span", "dim", "  asked " + r.requested_hours + "h · " + ago(r.created_at) +
+      (r.device_id ? " · " + r.device_id : " · legacy")));
+    left.appendChild(who);
+    if (r.reason) { left.appendChild(el("div", "dim", "“" + r.reason + "”")); }
+    card.appendChild(left);
 
-$("loginbtn").onclick = doLogin;
-$("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") doLogin(); });
-$("logout").onclick = function () {
-  api("/ui/logout", {}).then(showLogin).catch(function () { showLogin(); });
-};
+    var act = el("div", "actions");
+    var dur = el("select");
+    [r.requested_hours, 5, 8, 12, 24, 48, 72].forEach(function (h, i) {
+      var o = el("option", null, i === 0 ? (h + "h (as asked)") : h + "h");
+      o.value = String(h);
+      dur.appendChild(o);
+    });
+    act.appendChild(dur);
+    var ok = el("button", "good", "approve");
+    ok.addEventListener("click", function () {
+      api("/ui/approve", { request_id: r.id, hours: parseFloat(dur.value) })
+        .then(function (v) { toast("approved → " + (v.session && v.session.id), "good"); refresh(); },
+              function (e) { toast(e.message, "bad"); });
+    });
+    act.appendChild(ok);
+    var no = el("button", "danger", "deny");
+    no.addEventListener("click", function () {
+      api("/ui/deny", { request_id: r.id, reason: "denied from web console" })
+        .then(function () { toast("denied " + r.id, "bad"); refresh(); },
+              function (e) { toast(e.message, "bad"); });
+    });
+    act.appendChild(no);
+    card.appendChild(act);
+    host.appendChild(card);
+  });
+}
 
-// on load: are we already logged in?
-refresh();
-setInterval(function () {
-  if (!$("dash").classList.contains("hidden")) refresh();
-}, 5000);
+/* ---------- sessions ---------- */
+function renderSessions(sessions, host, onlyLive) {
+  clear(host);
+  if (!sessions.length) {
+    host.appendChild(el("div", "empty", onlyLive
+      ? "✓ no active sessions — the gate is closed."
+      : "no sessions yet — agents get access only after you approve."));
+    return;
+  }
+  var t = el("table");
+  var tr = el("tr");
+  ["ID", "AGENT", "SCOPE", "DEVICE", "STATE", "EXPIRES"].forEach(function (h) { tr.appendChild(el("th", null, h)); });
+  t.appendChild(tr);
+  sessions.forEach(function (s) {
+    var row = el("tr");
+    row.appendChild(el("td", "mono", s.id));
+    row.appendChild(el("td", "sans", s.agent ? s.agent.name : (s.agent_name || "agent")));
+    row.appendChild(el("td", null, ""));
+    row.lastChild.appendChild(pill("scope-" + (s.scope === "full_access" ? "fa" : "to"), s.scope));
+    row.appendChild(el("td", "mono dim", s.device_id || "legacy"));
+    var st = el("td", "sans");
+    var eff = s.effective_status || s.status;
+    st.appendChild(pill("st-" === "" ? "" : "st-" + eff, eff));
+    if (eff === "active") {
+      st.appendChild(el("span", "dim", " " + countdown(s.seconds_remaining)));
+    }
+    row.appendChild(st);
+    row.appendChild(el("td", "dim", new Date((s.expires_at || 0) * 1000).toISOString().replace("T", " ").slice(0, 16) + "Z"));
+    if (eff === "active") {
+      var act = el("td", "sans");
+      var rv = el("button", "danger mini", "revoke");
+      rv.addEventListener("click", function () {
+        api("/ui/revoke", { session_id: s.id, reason: "revoked from web console" })
+          .then(function () { toast("revoked " + s.id + " — access died", "bad"); refresh(); },
+                function (e) { toast(e.message, "bad"); });
+      });
+      act.appendChild(rv);
+      row.appendChild(act);
+    } else {
+      row.appendChild(el("td"));
+    }
+    t.appendChild(row);
+  });
+  host.appendChild(t);
+}
+
+/* ---------- devices ---------- */
+function renderDevices(devices) {
+  var host = document.getElementById("devlist");
+  clear(host);
+  if (!devices.length) {
+    var c = el("div", "card");
+    c.appendChild(el("div", "empty", "no devices yet — add one above, then hand the id + password to your AI agent."));
+    host.appendChild(c);
+    return;
+  }
+  devices.forEach(function (d) {
+    var card = el("div", "card");
+    var box = el("div", "devcard");
+    var left = el("div");
+    var idrow = el("div", "mono");
+    var idspan = el("span", "id", d.id);
+    idrow.appendChild(idspan);
+    idrow.appendChild(copyBtn(function () { return d.id; }));
+    if (d.key_only) { idrow.appendChild(pill("dev", "key-only legacy")); }
+    else if (d.login_enabled) { idrow.appendChild(pill("st-active", "active")); }
+    else { idrow.appendChild(pill("st-revoked", "locked")); }
+    left.appendChild(idrow);
+    var meta = el("div", "devrow");
+    meta.appendChild(el("span", null, d.name));
+    meta.appendChild(el("span", null, "last seen " + ago(d.last_seen)));
+    meta.appendChild(el("span", null, d.active_sessions + " active session(s)"));
+    if (d.last_rotate) { meta.appendChild(el("span", null, "key rotated " + ago(d.last_rotate))); }
+    left.appendChild(meta);
+    box.appendChild(left);
+
+    var act = el("div", "actions");
+    act.style.flexDirection = "column";
+    if (!d.key_only) {
+      var pw = el("button", "mini", "rotate password");
+      pw.addEventListener("click", function () {
+        api("/ui/device/passwd", { id: d.id }).then(function (v) {
+          showSecretModal("New device password", d.id, v.password);
+          refresh();
+        }, function (e) { toast(e.message, "bad"); });
+      });
+      act.appendChild(pw);
+      if (d.login_enabled) {
+        var lk = el("button", "danger mini", "lock");
+        lk.addEventListener("click", function () {
+          api("/ui/device/lock", { id: d.id }).then(function (v) {
+            toast("locked " + d.id + " — " + (v.revoked_sessions || []).length + " session(s) revoked", "bad");
+            refresh();
+          }, function (e) { toast(e.message, "bad"); });
+        });
+        act.appendChild(lk);
+      } else {
+        var ul = el("button", "good mini", "unlock");
+        ul.addEventListener("click", function () {
+          api("/ui/device/unlock", { id: d.id }).then(function () { toast("unlocked " + d.id, "good"); refresh(); },
+                                                     function (e) { toast(e.message, "bad"); });
+        });
+        act.appendChild(ul);
+      }
+    }
+    var rm = el("button", "danger mini", "remove");
+    rm.addEventListener("click", function () {
+      modal("Remove device " + d.id + "?", function (m) {
+        m.appendChild(el("div", "body", "The device key is destroyed and its sessions are revoked. The password will never work again. This cannot be undone."));
+      }, null);
+      // second button inside the modal body (custom confirm)
+      var m = document.getElementById("modal");
+      var row = m.lastChild;
+      var yes = el("button", "danger", "remove device");
+      yes.addEventListener("click", function () {
+        document.getElementById("modalwrap").classList.remove("on");
+        api("/ui/device/remove", { id: d.id }).then(function (v) {
+          toast("removed " + d.id + " — " + (v.revoked_sessions || []).length + " session(s) revoked", "bad");
+          refresh();
+        }, function (e) { toast(e.message, "bad"); });
+      });
+      row.insertBefore(yes, row.firstChild);
+    });
+    act.appendChild(rm);
+    box.appendChild(act);
+    card.appendChild(box);
+    host.appendChild(card);
+  });
+}
+
+function showSecretModal(title, deviceId, password) {
+  modal(title, function (m) {
+    m.appendChild(el("div", "body", "Shown ONCE — store it now. The agent needs only these two things:"));
+    var box1 = el("div", "secret");
+    box1.appendChild(el("div", "lab", "device id"));
+    box1.appendChild(el("div", null, deviceId));
+    m.appendChild(box1);
+    var box2 = el("div", "secret");
+    box2.appendChild(el("div", "lab", "password"));
+    box2.appendChild(el("div", null, password));
+    m.appendChild(box2);
+    var row = el("div", "actions");
+    row.appendChild(copyBtn(function () { return deviceId + "\n" + password; }, "copy both"));
+    row.appendChild(copyBtn(password, "copy password"));
+    m.appendChild(row);
+    if (ST && ST.fingerprint) {
+      var fp = el("div", "dim mono");
+      fp.style.marginTop = "10px";
+      fp.style.fontSize = "11px";
+      fp.textContent = "fingerprint " + ST.fingerprint;
+      m.appendChild(fp);
+    }
+  });
+}
+
+document.getElementById("devadd").addEventListener("click", function () {
+  var name = document.getElementById("devname").value.trim();
+  if (!name) { toast("give the device a name first", "bad"); return; }
+  api("/ui/device/add", { name: name }).then(function (v) {
+    document.getElementById("devname").value = "";
+    showSecretModal("Device created — " + name, v.device_id, v.password);
+    refresh();
+  }, function (e) { toast(e.message, "bad"); });
+});
+document.getElementById("devname").addEventListener("keydown", function (ev) {
+  if (ev.key === "Enter") { document.getElementById("devadd").click(); }
+});
+
+/* ---------- audit ---------- */
+document.getElementById("auditq").addEventListener("input", renderAuditFromSt);
+document.getElementById("auditlvl").addEventListener("change", renderAuditFromSt);
+function renderAuditFromSt() { if (ST) { renderAudit(ST.audit || []); } }
+function renderAudit(audit) {
+  var host = document.getElementById("auditlist");
+  if (!host) { return; }
+  clear(host);
+  var q = (document.getElementById("auditq").value || "").toLowerCase();
+  var lvl = document.getElementById("auditlvl").value || "";
+  var rows = audit.filter(function (e) {
+    if (lvl && String(e.action || "").indexOf(lvl + ".") !== 0) {
+      // category filter: auth.*, device.*, session.*, request.*, system.*; owner = actor
+      if (!(lvl === "owner" && String(e.actor || "") === "owner")) { return false; }
+    }
+    if (q) {
+      var hay = ((e.actor || "") + " " + (e.action || "") + " " + (e.subject || "")).toLowerCase();
+      if (hay.indexOf(q) < 0) { return false; }
+    }
+    return true;
+  });
+  var chip = document.getElementById("chainchip");
+  var chain = ST && ST.audit_chain;
+  chip.classList.toggle("bad", !(chain && chain.ok));
+  document.getElementById("chaintext").textContent = chain && chain.ok
+    ? "chain verified (" + chain.checked + " lines)"
+    : "CHAIN TAMPERED — run frtrol doctor";
+  if (!rows.length) {
+    host.appendChild(el("div", "empty", "no matching audit events."));
+    return;
+  }
+  var t = el("table");
+  var tr = el("tr");
+  ["TIME", "ACTOR", "ACTION", "SUBJECT"].forEach(function (h) { tr.appendChild(el("th", null, h)); });
+  t.appendChild(tr);
+  rows.forEach(function (e) {
+    var row = el("tr");
+    row.appendChild(el("td", "dim", new Date((e.ts || 0) * 1000).toISOString().replace("T", " ").slice(0, 16) + "Z"));
+    row.appendChild(el("td", "mono", e.actor || "?"));
+    var a = el("td", "mono");
+    var color = String(e.action || "").indexOf("auth") === 0 ? "warn"
+      : (String(e.action || "").indexOf("device") === 0 ? "" : "dim");
+    a.appendChild(el("span", color, e.action || "?"));
+    row.appendChild(a);
+    row.appendChild(el("td", "mono dim", e.subject || ""));
+    t.appendChild(row);
+  });
+  host.appendChild(t);
+}
+
+/* recent audit on dashboard: last 8, compact */
+(function () {
+  var orig = renderAudit;
+  renderAudit = function (audit) {
+    var host = document.getElementById("recent");
+    if (host && PAGE === "dash") {
+      clear(host);
+      audit.slice(0, 8).forEach(function (e) {
+        var line = el("div", "mono");
+        line.style.fontSize = "11.5px";
+        line.style.padding = "3px 0";
+        line.appendChild(el("span", "dim", new Date((e.ts || 0) * 1000).toISOString().slice(11, 19) + "Z "));
+        line.appendChild(el("span", null, (e.actor || "?") + " "));
+        line.appendChild(el("span", "dim", (e.action || "?") + " "));
+        line.appendChild(el("span", "dim", e.subject || ""));
+        host.appendChild(line);
+      });
+      if (!audit.length) { host.appendChild(el("div", "empty", "no audit events yet.")); }
+    }
+    orig(audit);
+  };
+})();
+
+/* ---------- danger ---------- */
+document.getElementById("panicbtn").addEventListener("click", function () {
+  modal("PANIC — kill all access?", function (m) {
+    m.appendChild(el("div", "body", "Every session is revoked, every pending request expires, every terminal dies, and every device key rotates. Agents re-login with their device id + password. This is the point of the button — but it is loud."));
+  });
+  var m = document.getElementById("modal");
+  var row = m.lastChild;
+  var yes = el("button", "danger", "yes — PANIC");
+  yes.addEventListener("click", function () {
+    document.getElementById("modalwrap").classList.remove("on");
+    api("/ui/panic", { reason: "panic from web console" }).then(function (v) {
+      toast("PANIC done — " + (v.revoked_sessions || 0) + " session(s) revoked, " +
+            (v.rotated_device_keys || 0) + " device key(s) rotated", "bad");
+      refresh();
+    }, function (e) { toast(e.message, "bad"); });
+  });
+  row.insertBefore(yes, row.firstChild);
+});
+
+/* ---------- boot: try an authenticated poll ---------- */
+api("/ui/state").then(showApp, showLogin);
 </script>
 </body>
 </html>

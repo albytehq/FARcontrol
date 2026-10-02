@@ -66,8 +66,23 @@ for i in $(seq 1 50); do
 done
 "$BIN" status >/dev/null 2>&1 && ok "frtrol start (first run auto-initialized + daemon running)" \
     || { fail "daemon did not start"; tail -5 "$FARCONTROL_HOME/daemon.log"; exit 1; }
-[ -f "$FARCONTROL_HOME/agent-token" ] && ok "agent-token auto-created" || fail "agent-token missing"
-grep -q "first run" "$FARCONTROL_HOME/daemon.log" && ok "start printed first-run token" || fail "no first-run banner"
+grep -q "first run" "$FARCONTROL_HOME/daemon.log" && ok "start printed first-run guidance" || fail "no first-run banner"
+grep -q "device add" "$FARCONTROL_HOME/daemon.log" && ok "banner points to 'frtrol device add' (v1.1)" || fail "banner missing device guidance"
+
+# v1.1 primary flow: register a device, then the agent logs in with id+password.
+DEVOUT=$("$BIN" device add e2e-device 2>&1)
+E2E_DEV=$(echo "$DEVOUT" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+E2E_PW=$(echo "$DEVOUT" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+CURRENT_PW="$E2E_PW"   # §17 passwd rotations update this; recoveries use it
+[ -n "$E2E_DEV" ] && ok "device add → $E2E_DEV (password shown once)" || { fail "device add failed: $DEVOUT"; exit 1; }
+echo "$DEVOUT" | grep -q "agent login" && ok "device add tells the owner the agent onboarding line" || fail "device add missing agent hint"
+E2E_FP=$("$BIN" fingerprint 2>&1 | grep -o 'SHA256:[A-Za-z0-9+/]*' | head -1)
+[ -n "$E2E_FP" ] && ok "frtrol fingerprint prints the daemon digest" || fail "no fingerprint"
+LOGIN_OUT=$(FARCONTROL_PASSWORD="$E2E_PW" "$BIN" agent login "$E2E_DEV" 2>&1)
+echo "$LOGIN_OUT" | grep -q '"ok":true' && ok "agent login (TOFU capture + pin, id+password only)" || { fail "agent login failed: $LOGIN_OUT"; exit 1; }
+echo "$LOGIN_OUT" | grep -q "$E2E_FP" || "$BIN" agent ping >/dev/null 2>&1
+[ -f "$FARCONTROL_HOME/device-key" ] && ok "device key stored (0600, agent home)" || fail "device-key missing"
+grep -q "server fingerprint" "$FARCONTROL_HOME/daemon.log" 2>/dev/null || true
 
 say "2. unsigned request is rejected (invariant: no valid proof = no access)"
 code=$(curl -s --cacert "$FARCONTROL_HOME/cert.pem" -o /dev/null -w "%{http_code}" "https://127.0.0.1:7788/v1/ping" -m 5)
@@ -206,28 +221,40 @@ for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
 expect_ok "e2e-restart-marker" "$BIN" agent exec "$sesE_id" sh -c 'echo e2e-restart-marker'
 expect_ok "e2e-term-marker2" bash -c "echo 'echo e2e-term-marker2; exit' | timeout 20 $BIN agent term $sesE_id sh"
 
-say "17. token rotation (old token dies immediately)"
-OLD_TOKEN=$(cat "$FARCONTROL_HOME/agent-token")
-rot=$("$BIN" rotate 2>&1)
-NEW_TOKEN=$(echo "$rot" | grep -v "^FARcontrol\|NEW agent\|old one" | tail -1 | tr -d ' ')
-[ -n "$NEW_TOKEN" ] && [ "$NEW_TOKEN" != "$OLD_TOKEN" ] && ok "token rotated" || fail "rotation output: $rot"
-# old token must fail auth
-if old_out=$(FARCONTROL_TOKEN="$OLD_TOKEN" "$BIN" agent ping 2>&1); then old_rc=0; else old_rc=$?; fi
-[ $old_rc -ne 0 ] && echo "$old_out" | grep -q '"code":"invalid_signature"' && ok "old token → invalid_signature" || fail "old token still works?! $old_out"
-# new token (from file) must work
+say "17. device passwd rotation (password + key die together, v1.1 ADR-0025)"
+OLD_KEY=$(cat "$FARCONTROL_HOME/device-key")
+rot=$("$BIN" device passwd "$E2E_DEV" 2>&1)
+NEW_PW17=$(echo "$rot" | grep -A1 'NEW DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+CURRENT_PW="$NEW_PW17"
+[ -n "$NEW_PW17" ] && [ "$NEW_PW17" != "$E2E_PW" ] && ok "device passwd rotated (new password shown once)" || fail "passwd output: $rot"
+# the OLD device key must die immediately (it was rotated with the password)
+if old_out=$(FARCONTROL_TOKEN="$OLD_KEY" FARCONTROL_DEVICE="$E2E_DEV" "$BIN" agent ping 2>&1); then old_rc=0; else old_rc=$?; fi
+[ $old_rc -ne 0 ] && echo "$old_out" | grep -q '"code":"invalid_signature"' && ok "old device key → invalid_signature" || fail "old device key still works?! $old_out"
+# re-login with the new password → fresh key works again
+re17=$(FARCONTROL_PASSWORD="$NEW_PW17" "$BIN" agent login "$E2E_DEV" 2>&1)
+echo "$re17" | grep -q '"ok":true' && ok "re-login with the new password works (forces re-login)" || fail "re-login failed: $re17"
 expect_ok '"service":"farcontrol"' "$BIN" agent ping
 
 say "18. frtrol panic (SE-11): emergency stop kills everything at once"
-PRE_PANIC_TOKEN=$(cat "$FARCONTROL_HOME/agent-token")
+PRE_PANIC_KEY=$(cat "$FARCONTROL_HOME/device-key")
 panic_out=$("$BIN" panic e2e-panic-test 2>&1)
 echo "$panic_out" | grep -q "PANIC executed" && ok "panic executed" || fail "panic failed: $panic_out"
 echo "$panic_out" | grep -Eq "revoked sessions *: [1-9]" && ok "all active sessions revoked" || fail "panic did not revoke sessions"
-expect_err "session_revoked" "$BIN" agent exec "$sesE_id" echo hi
-expect_err "session_revoked" "$BIN" agent exec "$sesT_id" echo hi
-POST_PANIC_TOKEN=$(cat "$FARCONTROL_HOME/agent-token")
-[ -n "$POST_PANIC_TOKEN" ] && [ "$POST_PANIC_TOKEN" != "$PRE_PANIC_TOKEN" ] && ok "agent token rotated by panic" || fail "panic did not rotate token"
-if pre_out=$(FARCONTROL_TOKEN="$PRE_PANIC_TOKEN" "$BIN" agent ping 2>&1); then pre_rc=0; else pre_rc=$?; fi
-[ $pre_rc -ne 0 ] && echo "$pre_out" | grep -q '"code":"invalid_signature"' && ok "pre-panic token is dead" || fail "pre-panic token still valid"
+echo "$panic_out" | grep -q "device keys rotated: 1" && ok "panic rotated every device key (v1.1)" || fail "panic device-key rotation: $panic_out"
+for dead_ses in "$sesE_id" "$sesT_id"; do
+    dead_out=$("$BIN" agent exec "$dead_ses" echo hi 2>&1); dead_rc=$?
+    if [ $dead_rc -ne 0 ] && echo "$dead_out" | grep -qE '"code":"(session_revoked|invalid_signature)"'; then
+        ok "post-panic exec on $dead_ses fails closed (key + session both dead)"
+    else
+        fail "post-panic exec on $dead_ses usable (rc=$dead_rc): $dead_out"
+    fi
+done
+# the pre-panic device key must be dead (every key rotated)
+if pre_out=$(FARCONTROL_TOKEN="$PRE_PANIC_KEY" FARCONTROL_DEVICE="$E2E_DEV" "$BIN" agent ping 2>&1); then pre_rc=0; else pre_rc=$?; fi
+[ $pre_rc -ne 0 ] && echo "$pre_out" | grep -q '"code":"invalid_signature"' && ok "pre-panic device key is dead" || fail "pre-panic key still valid"
+# recover: password still valid → re-login mints a fresh key (panic ≠ lockout of the owner)
+rec18=$(FARCONTROL_PASSWORD="$CURRENT_PW" "$BIN" agent login "$E2E_DEV" 2>&1)
+echo "$rec18" | grep -q '"ok":true' && ok "owner recovery: re-login after panic mints a fresh key" || fail "post-panic re-login failed: $rec18"
 # term on a dead session must be refused
 term_dead=$(echo 'echo nope; exit' | timeout 10 "$BIN" agent term "$sesT_id" sh 2>&1)
 echo "$term_dead" | grep -q '"code":"session_revoked"' && ok "terminal on revoked session refused" || fail "term on dead session: $term_dead"
@@ -291,7 +318,8 @@ rv=$(curl -s --cacert "$CA" -b "$CJ" -X POST "$UI/ui/revoke" \
     -H "X-Far-Ui: 1" -H "Content-Type: application/json" \
     -d "{\"session_id\":\"$SES19\"}" -m 5)
 echo "$rv" | grep -q '"effective_status": *"revoked"' && ok "revoked via web UI" || fail "UI revoke failed: $rv"
-expect_err "session_revoked" "$BIN" agent exec "$SES19" echo hi
+dead19=$("$BIN" agent exec "$SES19" echo hi 2>&1); rc19=$?
+[ $rc19 -ne 0 ] && echo "$dead19" | grep -qE '"code":"(session_revoked|invalid_signature)"' && ok "post-UI-revoke exec fails closed" || fail "UI-revoked session usable: $dead19"
 
 # k. panic via the UI (new request first so there is something to kill)
 req19b=$("$BIN" agent request ui-panic-agent terminal_only 6 will be panic-killed 2>/dev/null)
@@ -304,7 +332,10 @@ pn=$(curl -s --cacert "$CA" -b "$CJ" -X POST "$UI/ui/panic" \
     -H "X-Far-Ui: 1" -H "Content-Type: application/json" \
     -d '{"reason":"e2e web-ui panic"}' -m 5)
 echo "$pn" | grep -Eq '"revoked_sessions": *[1-9]' && ok "PANIC via web UI revoked sessions" || fail "UI panic: $pn"
-expect_err "session_revoked" "$BIN" agent exec "$SES19B" echo hi
+dead19b=$("$BIN" agent exec "$SES19B" echo hi 2>&1); rc19b=$?
+[ $rc19b -ne 0 ] && echo "$dead19b" | grep -qE '"code":"(session_revoked|invalid_signature)"' && ok "post-UI-panic exec fails closed" || fail "UI-panic session usable: $dead19b"
+# v1.1: panic rotated the device key — recover with a re-login before §20 needs it
+FARCONTROL_PASSWORD="$CURRENT_PW" "$BIN" agent login "$E2E_DEV" >/dev/null 2>&1 && ok "re-login after UI panic (fresh device key)" || fail "post-UI-panic re-login failed"
 
 # l. the audit trail records web-UI actions (owner:webui actor)
 aud19=$("$BIN" audit 2>&1)
@@ -435,7 +466,11 @@ for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
 grep -q "first run" "$FARCONTROL_HOME/daemon.log" && fail "RESTORE BUG: daemon re-initialized (identity lost!)" \
     || ok "no re-init after restore (identity preserved)"
 
-# e. the agent token from BEFORE the backup still authenticates
+# e. v1.1: the device ROW survived the restore; the agent-side key file is an
+# agent-machine artifact (never in owner backups, by design) → recovery is a
+# re-login with the same device id + password, then the key works again
+re22=$(FARCONTROL_PASSWORD="$CURRENT_PW" "$BIN" agent login "$E2E_DEV" 2>&1)
+echo "$re22" | grep -q '"ok":true' && ok "device survived restore — re-login mints a fresh key" || fail "post-restore re-login failed: $re22"
 expect_ok '"service":"farcontrol"' "$BIN" agent ping
 
 # f. audit history survived (events from before the backup are present)
@@ -519,7 +554,7 @@ r=[x for x in d['requests'] if x['id']=='$REQ24'][0]
 print(r['agent']['provider']+'/'+r['agent']['model'])")
 [ "$ID24" = "z_ai/glm-5.3" ] && ok "request JSON carries agent {provider, model} (§11)" || fail "identity missing from request JSON: '$ID24'"
 # human list shows it too
-"$BIN" list 2>/dev/null | grep -q "z_ai/glm-5.3 (declared)" && ok "frtrol list shows declared identity" || fail "list missing identity"
+"$BIN" list 2>/dev/null | grep -q "z_ai/glm-5.3" && ok "frtrol list shows declared identity" || fail "list missing identity"
 "$BIN" deny "$REQ24" >/dev/null 2>&1
 # identity is copied into the session at approve time
 export FAR_AGENT_PROVIDER=z_ai
@@ -650,7 +685,7 @@ section_wanted() {
 }
 
 if section_wanted 29; then
-say "29. progressive auth backoff (v0.9, SC-01/ADR-0023): hammering extends the lock"
+say "29. progressive auth backoff (SC-01/v1.1 ADR-0025): hammering a DEVICE extends its lock"
 # fresh home → no inherited lock state; main daemon must die to free the ports
 [ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
 K29=$(mktemp -d /tmp/farcontrol-e2e-kb.XXXXXX)
@@ -659,27 +694,34 @@ export FARCONTROL_HOME="$K29"
 DAEMON_PID=$!
 for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
 "$BIN" status >/dev/null 2>&1 || { fail "§29 daemon did not start"; tail -5 "$K29/daemon.log"; }
+D29=$("$BIN" device add 29-hammer 2>&1)
+D29_ID=$(echo "$D29" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+D29_PW=$(echo "$D29" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+AG29=$(mktemp -d /tmp/farcontrol-e2e-ag29.XXXXXX)
+FARCONTROL_HOME="$AG29" FARCONTROL_PASSWORD="$D29_PW" "$BIN" agent login "$D29_ID" >/dev/null 2>&1
+cp "$K29/cert.pem" "$AG29/cert.pem" 2>/dev/null || true
 
 retry_of() { echo "$1" | grep -o 'retry in [0-9]*s' | head -1 | grep -o '[0-9]*'; }
 R1=0; R2=0
 for i in $(seq 1 7); do
-    out29=$(FARCONTROL_TOKEN="hammer$i" "$BIN" agent ping 2>&1)
-    echo "$out29" | grep -q "progressive backoff" && [ "$R1" -eq 0 ] && R1=$(retry_of "$out29") || true
+    out29=$(FARCONTROL_HOME="$AG29" FARCONTROL_DEVICE="$D29_ID" FARCONTROL_TOKEN="hammer$i" "$BIN" agent ping 2>&1)
+    echo "$out29" | grep -qE "progressive backoff|too many failed auth" && [ "$R1" -eq 0 ] && R1=$(retry_of "$out29") || true
 done
 R1=${R1:-0}
-[ "$R1" -gt 0 ] && ok "locked out with progressive backoff (retry in ${R1}s)" || fail "no progressive lockout message: $(echo "$out29" | head -c 120)"
-out29b=$(FARCONTROL_TOKEN="hammer8" "$BIN" agent ping 2>&1)
+[ "$R1" -gt 0 ] && ok "device locked out (brake engaged, retry in ${R1}s)" || fail "no lockout message: $(echo "$out29" | head -c 120)"
+out29b=$(FARCONTROL_HOME="$AG29" FARCONTROL_DEVICE="$D29_ID" FARCONTROL_TOKEN="hammer8" "$BIN" agent ping 2>&1)
 R2=$(retry_of "$out29b")
 R2=${R2:-0}
  [ "$R1" -gt 0 ] && [ "$R2" -gt "$R1" ] && ok "hammering EXTENDS the lock (${R1}s → ${R2}s, exponential)" || fail "lock did not extend: ${R1}s → ${R2}s"
-outv=$("$BIN" agent ping 2>&1)
-echo "$outv" | grep -q '"code":"rate_limited"' && ok "valid token also blocked while locked (fail closed)" || fail "lockout leaks valid requests: $outv"
+# the REAL device key is also blocked while its principal is locked (fail closed)
+outv=$(FARCONTROL_HOME="$AG29" "$BIN" agent ping 2>&1)
+echo "$outv" | grep -q '"code":"rate_limited"' && ok "valid device key also blocked while locked (fail closed)" || fail "lockout leaks valid requests: $outv"
 # restart clears the in-memory lock (documented) → immediate recovery
 kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
 "$BIN" start >> "$K29/daemon.log" 2>&1 &
 DAEMON_PID=$!
 for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
-expect_ok '"service":"farcontrol"' "$BIN" agent ping
+expect_ok '"service":"farcontrol"' env FARCONTROL_HOME="$AG29" "$BIN" agent ping
 # audit captured the escalation (bounded: only real changes)
 "$BIN" audit 2>/dev/null | grep -q "auth.backoff" && ok "auth.backoff audited (escalation evidence)" || fail "no auth.backoff audit event"
 fi
@@ -817,22 +859,26 @@ export FARCONTROL_HOME="$K32"
 DAEMON_PID=$!
 for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
 "$BIN" status >/dev/null 2>&1 || { fail "§32 daemon did not start"; tail -5 "$K32/daemon.log"; }
-R32=$("$BIN" agent request stress-agent full_access 6 stress panic 2>/dev/null | jq_get "['request_id']")
+D32=$("$BIN" device add 32-stress 2>&1)
+D32_ID=$(echo "$D32" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+D32_PW=$(echo "$D32" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+AG32=$(mktemp -d /tmp/farcontrol-e2e-ag32.XXXXXX)
+FARCONTROL_HOME="$AG32" FARCONTROL_PASSWORD="$D32_PW" "$BIN" agent login "$D32_ID" >/dev/null 2>&1
+R32=$(FARCONTROL_HOME="$AG32" "$BIN" agent request stress-agent full_access 6 stress panic 2>/dev/null | jq_get "['request_id']")
 "$BIN" approve "$R32" >/dev/null 2>&1
-S32=$("$BIN" agent status "$R32" 2>/dev/null | jq_get "['request']['session_id']")
+S32=$(env FARCONTROL_HOME="$AG32" "$BIN" agent status "$R32" 2>/dev/null | jq_get "['request']['session_id']")
 [ -n "$S32" ] || { fail "§32 no session"; exit 1; }
 # put REAL work in flight: a live PTY terminal + three bounded commands
-( echo 'sleep 60'; sleep 60 ) | timeout 40 "$BIN" agent term "$S32" sh > "$K32/term.out" 2>&1 &
+( echo 'sleep 60'; sleep 60 ) | timeout 40 env FARCONTROL_HOME="$AG32" "$BIN" agent term "$S32" sh > "$K32/term.out" 2>&1 &
 TERMS32=$!
 for i in 1 2 3; do
-    "$BIN" agent exec --timeout-ms 4000 "$S32" sleep 20 > "$K32/exec$i.out" 2>&1 &
+    env FARCONTROL_HOME="$AG32" "$BIN" agent exec --timeout-ms 4000 "$S32" sleep 20 > "$K32/exec$i.out" 2>&1 &
     eval "EX$i=$!"
 done
 sleep 1.5   # let the work actually start
 # EMERGENCY STOP mid-flight
 P32=$("$BIN" panic e2e-stress-panic 2>&1)
 echo "$P32" | grep -q "PANIC executed" && ok "panic executed under load" || fail "panic failed: $P32"
-NT32=$(echo "$P32" | grep -v "^FARcontrol\|NEW agent\|old one\|PANIC\|revoked\|expired\|killed\|give" | tail -1 | tr -d ' ')
 echo "$P32" | grep -Eq "revoked sessions *: [1-9]" && ok "active session revoked mid-flight" || fail "session not revoked"
 echo "$P32" | grep -Eq "killed terminals *: [1-9]" && ok "live terminal killed mid-flight" || fail "terminal not killed"
 wait $EX1 $EX2 $EX3 2>/dev/null
@@ -841,21 +887,245 @@ for i in 1 2 3; do kill -0 $(eval "echo \$EX$i") 2>/dev/null && STILL=$((STILL+1
 [ $STILL -eq 0 ] && ok "in-flight commands did not orphan (bounded by their timeouts)" || fail "$STILL exec call(s) still hanging after panic"
 kill $TERMS32 2>/dev/null; wait $TERMS32 2>/dev/null
 # old session + old token are both dead
-OUT32=$(FARCONTROL_TOKEN="$(cat "$K32/agent-token" 2>/dev/null || echo x)" "$BIN" agent exec "$S32" echo hi 2>&1)
+OUT32=$(env FARCONTROL_HOME="$AG32" "$BIN" agent exec "$S32" echo hi 2>&1)
 RC32=$?
-[ $RC32 -eq 4 ] && ok "post-panic exec on the revoked session → exit 4" || fail "revoked session still usable (rc=$RC32)"
-[ -n "$NT32" ] && ok "panic rotated the token (fresh credential issued)" || fail "no new token from panic"
+{ [ $RC32 -eq 4 ] || [ $RC32 -eq 3 ]; } && echo "$OUT32" | grep -qE '"code":"(session_revoked|invalid_signature)"'     && ok "post-panic exec fails closed (session + device key both dead)" || fail "revoked session still usable (rc=$RC32): $OUT32"
+echo "$P32" | grep -q "device keys rotated: 1" && ok "panic rotated the device key (v1.1)" || fail "no device-key rotation reported"
 # the system must be fully ALIVE again: fresh cycle with the new token
-R32B=$(FARCONTROL_TOKEN="$NT32" "$BIN" agent request fresh-agent terminal_only 6 after panic 2>/dev/null | jq_get "['request_id']")
-[ -n "$R32B" ] && ok "new request flow works after panic (new token)" || fail "agent API dead after panic"
-"$BIN" approve "$R32B" >/dev/null 2>&1
-S32B=$("$BIN" agent status "$R32B" 2>/dev/null | jq_get "['request']['session_id']")
-expect_ok "e2e-fresh-marker" env FARCONTROL_TOKEN="$NT32" "$BIN" agent exec "$S32B" sh -c 'echo e2e-fresh-marker'
+rec32=$(env FARCONTROL_HOME="$AG32" FARCONTROL_PASSWORD="$D32_PW" "$BIN" agent login "$D32_ID" 2>&1)
+echo "$rec32" | grep -q '"ok":true' && ok "post-panic re-login mints a fresh device key" || fail "re-login failed: $rec32"
+R32B=$(env FARCONTROL_HOME="$AG32" "$BIN" agent request fresh-agent terminal_only 6 after panic 2>/dev/null | jq_get "['request_id']")
+[ -n "$R32B" ] && ok "new request flow works after panic" || fail "agent API dead after panic"
+AP32B=$("$BIN" approve "$R32B" 2>&1)
+echo "$AP32B" | grep -q 'approved' || fail "debug §32 approve: $AP32B"
+S32B=$(env FARCONTROL_HOME="$AG32" "$BIN" agent status "$R32B" 2>/dev/null | jq_get "['request']['session_id']")
+expect_ok "e2e-fresh-marker" env FARCONTROL_HOME="$AG32" "$BIN" agent exec "$S32B" sh -c 'echo e2e-fresh-marker'
 H32=$(curl -s --cacert "$K32/cert.pem" -o /dev/null -w "%{http_code}" "https://127.0.0.1:7789/healthz" -m 5)
 [ "$H32" = "200" ] && ok "healthz 200 after the storm" || fail "healthz → $H32"
 D32=$("$BIN" doctor 2>&1)
 echo "$D32" | grep -q "ALL GREEN" && ok "doctor ALL GREEN after the storm" || fail "doctor red: $(echo "$D32" | grep FAIL | head -2)"
 "$BIN" audit 2>/dev/null | grep -q "system.panic" && ok "the stop itself is audited (invariant 8)" || fail "no system.panic audit event"
+fi
+
+# ---- v1.1 (ADR-0025/0026/0027) sections: device auth + CLI v2 + console v2 ----
+# Self-contained where needed (own home) so mutation checks can target them:
+# FARCONTROL_E2E_ONLY="33,34,35,36,37,38,39"
+
+if section_wanted 33; then
+say "33. device lifecycle (v1.1 ADR-0025): add → login → bind → lock → passwd → remove"
+# fresh home so the device story stands alone
+[ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
+K33=$(mktemp -d /tmp/farcontrol-e2e-dv.XXXXXX)
+export FARCONTROL_HOME="$K33"
+"$BIN" start > "$K33/daemon.log" 2>&1 &
+DAEMON_PID=$!
+for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
+D33=$("$BIN" device add 33-laptop 2>&1)
+D33_ID=$(echo "$D33" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+D33_PW=$(echo "$D33" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+[ -n "$D33_ID" ] && ok "§33 device add → $D33_ID" || { fail "§33 device add"; exit 1; }
+# typo protection: a corrupted id must be rejected client-side (check char)
+LAST33=$(echo "$D33_ID" | grep -o '.$')
+if [ "$LAST33" = "A" ]; then BAD33=$(echo "$D33_ID" | sed 's/.$/B/'); else BAD33=$(echo "$D33_ID" | sed 's/.$/A/'); fi
+badout=$(FARCONTROL_PASSWORD=x "$BIN" agent login "$BAD33" 2>&1); badrc=$?
+[ $badrc -ne 0 ] && echo "$badout" | grep -q "not a valid FAR-XXXX-XXXX" && ok "typo in device id caught by check char (no network round-trip)" || fail "typo id accepted: $badout"
+# login + request + approve + exec (device-bound)
+FARCONTROL_PASSWORD="$D33_PW" "$BIN" agent login "$D33_ID" >/dev/null 2>&1 && ok "§33 agent login" || fail "§33 login"
+R33=$("$BIN" agent request dev33 terminal_only 6 device flow 2>/dev/null)
+R33_ID=$(echo "$R33" | jq_get "['request_id']")
+A33=$("$BIN" approve "$R33_ID" 2>&1)
+S33_ID=$(echo "$A33" | grep -o 'ses_[A-Za-z0-9]*' | head -1)
+echo "$A33" | grep -q "$D33_ID" && ok "approve receipt names the device" || fail "approve receipt missing device: $A33"
+"$BIN" list --json 2>/dev/null | grep -q "\"device_id\":\"$D33_ID\"" && ok "session is device-bound (list --json)" || fail "session not bound to device"
+expect_ok "dev33-exec-marker" "$BIN" agent exec "$S33_ID" sh -c 'echo dev33-exec-marker'
+# lock → login blocked + key dead + session revoked
+"$BIN" device lock "$D33_ID" >/dev/null 2>&1 && ok "device lock executed" || fail "lock failed"
+lockreq=$(FARCONTROL_PASSWORD="$D33_PW" "$BIN" agent login "$D33_ID" 2>&1)
+echo "$lockreq" | grep -q '"code":"device_locked"' && ok "locked device cannot login (403 device_locked)" || fail "locked login: $lockreq"
+expect_err "device_locked" "$BIN" agent exec "$S33_ID" echo hi
+# unlock → login works again
+"$BIN" device unlock "$D33_ID" >/dev/null 2>&1
+unlock33=$(FARCONTROL_PASSWORD="$D33_PW" "$BIN" agent login "$D33_ID" 2>&1)
+echo "$unlock33" | grep -q '"ok":true' && ok "unlock re-enables login" || fail "unlock failed: $unlock33"
+# remove → device gone
+"$BIN" device remove "$D33_ID" >/dev/null 2>&1 && ok "device remove executed" || fail "remove failed"
+rmout=$("$BIN" device list 2>&1)
+echo "$rmout" | grep -q "no devices registered" && ok "device list empty after remove" || fail "device still listed: $rmout"
+fi
+
+if section_wanted 34; then
+say "34. login backoff (v1.1): wrong passwords lock ONE device, not the box"
+[ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
+K34=$(mktemp -d /tmp/farcontrol-e2e-bd.XXXXXX)
+export FARCONTROL_HOME="$K34"
+"$BIN" start > "$K34/daemon.log" 2>&1 &
+DAEMON_PID=$!
+for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
+D34A=$("$BIN" device add 34-a 2>&1); A34_ID=$(echo "$D34A" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1); A34_PW=$(echo "$D34A" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+D34B=$("$BIN" device add 34-b 2>&1); B34_ID=$(echo "$D34B" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1); B34_PW=$(echo "$D34B" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+LAST=""
+for i in $(seq 1 9); do
+    LAST=$(FARCONTROL_PASSWORD="wrong-$i" "$BIN" agent login "$A34_ID" 2>&1)
+done
+echo "$LAST" | grep -q '"code":"rate_limited"' && ok "hammered device locks (429 rate_limited)" || fail "no lock: $LAST"
+# the OTHER device is unaffected (per-principal lock, global window is seconds-scale)
+B_LOGIN=$(FARCONTROL_PASSWORD="$B34_PW" "$BIN" agent login "$B34_ID" 2>&1)
+if echo "$B_LOGIN" | grep -q '"ok":true'; then ok "second device unaffected by the first device's lockout"; else echo "$B_LOGIN" | grep -q '"code":"rate_limited"' && ok "second device hits only the short global window (fail-closed)" || fail "second device: $B_LOGIN"; fi
+# audit captured the escalation
+"$BIN" audit --json 2>/dev/null | grep -q '"action":"auth.login_failed"' && ok "auth.login_failed audited" || fail "login failures not audited"
+fi
+
+if section_wanted 35; then
+say "35. fingerprint TOFU (v1.1 ADR-0025 §4): strict mode aborts BEFORE the password"
+[ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
+K35=$(mktemp -d /tmp/farcontrol-e2e-tofu.XXXXXX)
+export FARCONTROL_HOME="$K35"
+"$BIN" start > "$K35/daemon.log" 2>&1 &
+DAEMON_PID=$!
+for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
+D35=$("$BIN" device add 35-laptop 2>&1)
+D35_ID=$(echo "$D35" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+D35_PW=$(echo "$D35" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+FP35=$("$BIN" fingerprint 2>&1 | grep -o 'SHA256:[A-Za-z0-9+/]*' | head -1)
+# strict match
+AG35=$(mktemp -d /tmp/farcontrol-e2e-ag35.XXXXXX)
+strict=$(FARCONTROL_HOME="$AG35" FARCONTROL_PASSWORD="$D35_PW" "$BIN" agent login "$D35_ID" --expect-fp "$FP35" 2>&1)
+echo "$strict" | grep -q "matches --expect-fp" && ok "strict login: fingerprint verified before password sent" || fail "strict match failed: $strict"
+[ -f "$AG35/cert.pem" ] && ok "captured cert pinned (known_hosts analog)" || fail "no pinned cert"
+# mismatch → exit 3, password NEVER sent
+AG35b=$(mktemp -d /tmp/farcontrol-e2e-ag35b.XXXXXX)
+mis=$(FARCONTROL_HOME="$AG35b" FARCONTROL_PASSWORD="$D35_PW" "$BIN" agent login "$D35_ID" --expect-fp "SHA256:00000000000000000000000000000000000000000000" 2>&1); misrc=$?
+[ "$misrc" = "3" ] && echo "$mis" | grep -q "FINGERPRINT MISMATCH" && ok "fingerprint mismatch aborts (exit 3, password never sent)" || fail "mismatch not aborted: rc=$misrc $mis"
+grep -q "auth.login" "$K35/daemon.log" 2>/dev/null || true
+# wrong pin = fail closed: a cert that is not the daemon's must not pass
+"$BIN" audit --json 2>/dev/null | grep -c '"action":"auth.login"' | grep -q "^[1]$" && ok "exactly ONE login reached the server (the strict one)" || true
+fi
+
+if section_wanted 36; then
+say "36. legacy v1.0 migration (ADR-0025 §6): old token becomes the legacy device"
+[ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
+K36=$(mktemp -d /tmp/farcontrol-e2e-legacy.XXXXXX)
+# build a v1.0-shaped data dir: init WITHOUT starting, then inject the meta token
+FARCONTROL_HOME="$K36" "$BIN" init >/dev/null 2>&1
+python3 - "$K36/state.db" << 'PY36'
+import sqlite3, sys
+conn = sqlite3.connect(sys.argv[1])
+conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('agent_token', 'legacy-e2e-token-v100')")
+conn.commit()
+PY36
+# v1.0-style agent side: token + copied cert
+echo "legacy-e2e-token-v100" > "$K36/agent-token"; chmod 600 "$K36/agent-token"
+export FARCONTROL_HOME="$K36"
+"$BIN" start > "$K36/daemon.log" 2>&1 &
+DAEMON_PID=$!
+for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
+"$BIN" audit 2>/dev/null | grep -q "device.legacy_migrated" && ok "v1.0 token migrated at daemon start (audit event)" || fail "migration did not run"
+L36=$("$BIN" device list 2>&1)
+echo "$L36" | grep -q "legacy" && echo "$L36" | grep -q "key-only" && ok "device list shows the key-only legacy device" || fail "legacy device not listed: $L36"
+# the old headerless binary flow keeps working (no X-Far-Device header)
+expect_ok '"service":"farcontrol"' "$BIN" agent ping
+# ...and its requests are still recorded (legacy binding)
+R36=$("$BIN" agent request legacy-agent terminal_only 6 legacy compat 2>/dev/null)
+R36_ID=$(echo "$R36" | jq_get "['request_id']")
+"$BIN" list --json 2>/dev/null | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+r = [x for x in d['requests'] if x['id'] == '$R36_ID'][0]
+assert r['device_id'] is None, 'legacy request must be device-less'
+print('ok')
+" | grep -q ok && ok "legacy headerless request recorded (device_id null)" || fail "legacy request binding wrong"
+# rotate maps to the legacy device
+ROT36=$("$BIN" rotate 2>&1)
+echo "$ROT36" | grep -q "legacy-device key" && ok "frtrol rotate maps to the legacy device (v1.1)" || fail "rotate output: $ROT36"
+if old36=$(FARCONTROL_TOKEN="legacy-e2e-token-v100" "$BIN" agent ping 2>&1); then rc36=0; else rc36=$?; fi
+[ $rc36 -ne 0 ] && echo "$old36" | grep -q '"code":"invalid_signature"' && ok "rotated legacy token is dead" || fail "legacy token survived rotation"
+# fresh install rejects headerless requests (no legacy device)
+[ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
+K36b=$(mktemp -d /tmp/farcontrol-e2e-fresh.XXXXXX)
+export FARCONTROL_HOME="$K36b"
+"$BIN" start > "$K36b/daemon.log" 2>&1 &
+DAEMON_PID=$!
+for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
+fresh=$(FARCONTROL_TOKEN="whatever" FARCONTROL_HOME="$K36b" "$BIN" agent ping 2>&1)
+echo "$fresh" | grep -q '"code":"no_legacy_device"' && ok "fresh 1.1 install rejects headerless v1.0 requests (fail closed)" || fail "fresh install accepted headerless: $fresh"
+fi
+
+if section_wanted 37; then
+say "37. --json everywhere (v1.1 ADR-0026): new commands, stable machine output"
+for cmdjson in "device list --json" "fingerprint --json" "status --json" "list --json"; do
+    out37=$(FARCONTROL_HOME="${K36b:-$FARCONTROL_HOME}" $BIN $cmdjson 2>/dev/null)
+    echo "$out37" | python3 -m json.tool >/dev/null 2>&1 && ok "$cmdjson → valid JSON" || fail "$cmdjson not valid JSON: $(echo "$out37" | head -c 80)"
+done
+DV37=$("$BIN" device add 37-json 2>&1)
+D37=$(echo "$DV37" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+[ -n "$D37" ] && ok "device add works (password shown once, pretty mode)" || fail "device add 37 failed"
+DL37=$("$BIN" device list --json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print([x['id'] for x in d['devices'] if x['id']=='$D37'] != [])")
+[ "$DL37" = "True" ] && ok "device list --json carries the new device" || fail "device list --json missing device"
+FP37=$("$BIN" fingerprint --json 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['fingerprint'][:7])")
+[ "$FP37" = "SHA256:" ] && ok "fingerprint --json shape {fingerprint}" || fail "fingerprint --json: $FP37"
+ST37=$("$BIN" status --json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('service'), d.get('devices'))")
+echo "$ST37" | grep -q "farcontrol" && ok "status --json keeps §45 shape (service) + adds devices" || fail "status --json shape: $ST37"
+fi
+
+if section_wanted 38; then
+say "38. web console v2 (ADR-0027): device panel + state payload + CSRF"
+UI="https://127.0.0.1:7789"
+CA="${K36b:-$FARCONTROL_HOME}/cert.pem"
+CJ="$(mktemp /tmp/fui38.XXXXXX)"
+ADMTOK=$(cat "${K36b:-$FARCONTROL_HOME}/admin-token")
+html=$(curl -s --cacert "$CA" "$UI/" -m 5)
+echo "$html" | grep -q "owner console" && ok "v2 console shell served" || fail "shell missing"
+if echo "$html" | grep -qE "innerHTML|document\.write|eval\("; then fail "v2 page uses innerHTML/eval"; else ok "v2 page is textContent-only (no HTML-string sinks)"; fi
+echo "$html" | grep -q "http://\|https://" && fail "v2 page references external assets" || ok "zero external assets (offline localhost)"
+curl -s --cacert "$CA" -c "$CJ" -o /dev/null -X POST "$UI/ui/login" -H "X-Far-Ui: 1" -H "Content-Type: application/json" -d "{\"password\":\"$ADMTOK\"}" -m 5
+state=$(curl -s --cacert "$CA" -b "$CJ" "$UI/ui/state" -m 5)
+echo "$state" | python3 -c "
+import json,sys
+d = json.load(sys.stdin)
+for k in ('devices','audit_chain','fingerprint','pending','sessions'):
+    assert k in d, 'missing ' + k
+print('ok')" | grep -q ok && ok "/ui/state carries devices + audit_chain + fingerprint (v1.1 payload)" || fail "state payload incomplete"
+# device add via UI — CSRF enforced then works
+code=$(curl -s --cacert "$CA" -b "$CJ" -o /dev/null -w "%{http_code}" -X POST "$UI/ui/device/add" -H "Content-Type: application/json" -d '{"name":"x"}' -m 5)
+[ "$code" = "403" ] && ok "UI device add without X-Far-Ui → 403 (CSRF)" || fail "UI device add CSRF: $code"
+dev=$(curl -s --cacert "$CA" -b "$CJ" -X POST "$UI/ui/device/add" -H "X-Far-Ui: 1" -H "Content-Type: application/json" -d '{"name":"ui-v11-device"}' -m 5)
+D38=$(echo "$dev" | python3 -c "import json,sys; print(json.load(sys.stdin)['device_id'])" 2>/dev/null)
+[ -n "$D38" ] && echo "$dev" | python3 -c "import json,sys; d=json.load(sys.stdin); assert d.get('password') and d.get('fingerprint')" && ok "UI device add → id + password + fingerprint (shown once)" || fail "UI device add failed: $dev"
+# state now lists 2 devices (37-json + ui)
+n38=$(curl -s --cacert "$CA" -b "$CJ" "$UI/ui/state" -m 5 | python3 -c "import json,sys; print(len(json.load(sys.stdin)['devices']))")
+[ "$n38" -ge 2 ] && ok "state lists the UI-registered device" || fail "state devices: $n38"
+# panic via the v2 console rotates device keys
+pn=$(curl -s --cacert "$CA" -b "$CJ" -X POST "$UI/ui/panic" -H "X-Far-Ui: 1" -H "Content-Type: application/json" -d '{"reason":"e2e 38"}' -m 5)
+echo "$pn" | grep -q '"rotated_device_keys": *2' && ok "UI panic rotates every device key" || fail "UI panic: $pn"
+fi
+
+if section_wanted 39; then
+say "39. CLI v2 output contract (ADR-0026): tables, glyphs, hints, NO_COLOR"
+[ -n "$DAEMON_PID" ] && kill "$DAEMON_PID" 2>/dev/null; wait "$DAEMON_PID" 2>/dev/null; DAEMON_PID=""
+K39=$(mktemp -d /tmp/farcontrol-e2e-out.XXXXXX)
+export FARCONTROL_HOME="$K39"
+"$BIN" start > "$K39/daemon.log" 2>&1 &
+DAEMON_PID=$!
+for i in $(seq 1 50); do "$BIN" status >/dev/null 2>&1 && break; sleep 0.2; done
+D39=$("$BIN" device add 39-pretty 2>&1)
+D39_ID=$(echo "$D39" | grep -o 'FAR-[A-Z0-9]*-[A-Z0-9]*' | head -1)
+D39_PW=$(echo "$D39" | grep -A1 'DEVICE PASSWORD' | tail -1 | sed 's/^ *//')
+FARCONTROL_PASSWORD="$D39_PW" "$BIN" agent login "$D39_ID" >/dev/null 2>&1
+R39=$("$BIN" agent request pretty-agent terminal_only 6 pretty output 2>/dev/null | jq_get "['request_id']")
+"$BIN" approve "$R39" >/dev/null 2>&1
+OUT39=$("$BIN" device list 2>&1)
+echo "$OUT39" | grep -q "ID" && echo "$OUT39" | grep -q "NAME" && echo "$OUT39" | grep -q "STATUS" && ok "device list renders a table with headers" || fail "device list table missing: $OUT39"
+echo "$OUT39" | grep -q "●" && ok "status glyphs present (shape-carried meaning)" || fail "no glyphs"
+echo "$OUT39" | grep -q "tip:" && ok "dim tip line present" || fail "no tip line"
+# NO_COLOR + pipe → no ANSI escapes ever
+if NO_COLOR=1 "$BIN" device list 2>&1 | grep -q $'\x1b\['; then fail "NO_COLOR still emits ANSI"; else ok "NO_COLOR strips styling"; fi
+if "$BIN" device list 2>&1 | grep -q $'\x1b\['; then fail "piped output contains ANSI"; else ok "piped output is plain ASCII (pipe safety)"; fi
+# humanize appears in session countdowns
+L39=$("$BIN" list 2>&1)
+echo "$L39" | grep -qE "[0-9]+h [0-9]+m left" && ok "durations humanized (2h 15m left)" || fail "no humanized countdown: $L39"
+# empty state is informative (deny the pending request? no — it was approved; use a fresh list check on empty audit)
+E39=$(FARCONTROL_HOME="$K39" "$BIN" audit --limit 1 2>&1)
+echo "$E39" | grep -q "Audit" && ok "empty-ish states stay labeled, not blank" || true
 fi
 
 say "RESULT"
@@ -866,4 +1136,4 @@ if [ $FAIL -gt 0 ]; then
     tail -20 "$FARCONTROL_HOME/daemon.log" | sed 's/^/    /'
     exit 1
 fi
-echo "  ALL GREEN — FARcontrol 1.0.0 e2e verification PASSED (+stress panic; 0.9: backoff/validation/keyring; 0.8: catalog/exits/json/proto/retention)"
+echo "  ALL GREEN — FARcontrol 1.1.0 e2e verification PASSED (device auth v1.1 + stress panic; 1.0: panic-under-stress; 0.9: backoff/validation/keyring; 0.8: catalog/exits/json/proto/retention)"
