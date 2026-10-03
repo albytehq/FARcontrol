@@ -136,6 +136,11 @@ enum Cmd {
         /// Agent name shown to the owner (connect flow; audit display only)
         #[arg(long)]
         name: Option<String>,
+        /// Strict TOFU: abort (exit 3) BEFORE the password is sent unless the
+        /// daemon cert fingerprint is exactly this (SHA256:… from 'frtrol
+        /// fingerprint' on the owner machine)
+        #[arg(long)]
+        expect_fp: Option<String>,
         /// Agent home (connection + runtime state). Default: ~/.farcontrol-agent
         #[arg(long, global = false, env = "FARCONTROL_AGENT_HOME", hide = true)]
         home: Option<PathBuf>,
@@ -146,7 +151,7 @@ enum Cmd {
         #[arg(long)]
         raw: bool,
         #[command(subcommand)]
-        cmd: Option<AgentCmd>,
+        cmd: Option<Box<AgentCmd>>,
     },
 }
 
@@ -338,9 +343,9 @@ fn run(cli: Cli) -> anyhow::Result<i32> {
         Some(Cmd::Restore { archive }) => {
             cli_admin::restore(&data_dir, std::path::Path::new(&archive)).map(|_| 0)
         }
-        Some(Cmd::Agent { url, device, password_file, name, home, timeout_secs, raw, cmd }) => {
+        Some(Cmd::Agent { url, device, password_file, name, expect_fp, home, timeout_secs, raw, cmd }) => {
             let home = match home { Some(h) => h, None => agent_client::default_agent_home()? };
-            agent_client::run(&home, agent_client::AgentArgs { url, device, name, password_file, timeout_secs, raw, json: cli.json }, cmd)
+            agent_client::run(&home, agent_client::AgentArgs { url, device, name, expect_fp, password_file, timeout_secs, raw, json: cli.json }, cmd.map(|b| *b))
         }
         Some(Cmd::Agentd) => agent_client::agentd_main(),
     }

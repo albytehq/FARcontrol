@@ -27,7 +27,10 @@ pub struct App {
     pub cfg: Config,
     pub data_dir: PathBuf,
     pub home_root: PathBuf,
-    pub admin_token: String,
+    /// The LIVE admin token (v1.2 fix, e2e-found): rotate/panic update it
+    /// in place — the file + meta alone were not enough, the owner CLI went
+    /// dead (`admin_auth_failed`) after any rotation until restart.
+    pub admin_token: Mutex<String>,
     pub pol: Policy,
     /// Live interactive terminals (v0.2, ADR-0013). Die with their session.
     pub terms: term::Terms,
@@ -323,7 +326,7 @@ pub async fn run(
         cfg,
         data_dir: data_dir.to_path_buf(),
         home_root,
-        admin_token: creds.admin_token.clone(),
+        admin_token: Mutex::new(creds.admin_token.clone()),
         pol,
         terms: term::Terms::default(),
         auth_fails: Mutex::new(Vec::new()),
@@ -347,7 +350,10 @@ pub async fn run(
     println!("\nFARcontrol {} — session started{}", env!("CARGO_PKG_VERSION"), if first_start { "  (first run)" } else { "" });
     println!("  device id        : {machine_id}");
     println!("  session password : {}", creds.password);
-    println!("  web console      : {}://{}/   (login: admin token below)", scheme, app.cfg.admin_bind);
+    // r6 discipline: value lines must stay uniquely greppable — no other
+    // banner line may contain the labels "session password" / "admin token"
+    // (e2e-found: "(login: admin token below)" here poisoned every grep).
+    println!("  web console      : {}://{}/   (login: the token on the next line)", scheme, app.cfg.admin_bind);
     println!("  admin token      : {}", creds.admin_token);
     println!();
     println!("  hand those two lines to your AI agent's operator, then on the");
@@ -625,20 +631,15 @@ pub(crate) fn rate_limit_check(app: &App, principal: &str) -> Result<(), ApiErro
     }
     drop(locks);
     // Burst window (unchanged v0.2 semantics — global, seconds-scale only).
+    // v1.2 fix (e2e-found): the brake REFUSES this request but does NOT put
+    // strikes onto the calling principal — an innocent heartbeat next to a
+    // brute-force storm must not inherit the storm's strike count and wedge
+    // its own progressive lock. A principal's lock still grows from its OWN
+    // failures (rate_record_fail) and still extends while locked (above).
     let (win, max) = rate_window();
     let mut fails = app.auth_fails.lock().unwrap_or_else(|e| e.into_inner());
     fails.retain(|t| nowts - *t < win);
     if fails.len() >= max {
-        let mut locks = app.auth_locks.lock().unwrap_or_else(|e| e.into_inner());
-        let lk = principal_lock(&mut locks, principal);
-        lk.strikes = lk.strikes.max(max as u32);
-        let (changed, secs) = apply_strike(lk, nowts, &p);
-        let strikes = lk.strikes;
-        drop(locks);
-        if changed {
-            let conn = lock(app);
-            state::audit(&conn, &app.data_dir, "network", "auth.backoff", Some(principal), json!({ "strikes": strikes, "lock_secs": secs }));
-        }
         let retry = (win - (nowts - fails[0])).max(1);
         return Err(ApiError::new(
             axum::http::StatusCode::TOO_MANY_REQUESTS,
@@ -873,7 +874,9 @@ fn verify_admin(app: &App, headers: &HeaderMap) -> Result<(), ApiError> {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .ok_or_else(|| ApiError::unauthorized("admin_auth_failed", "missing Authorization: Bearer <admin-token>"))?;
-    if !crypto::ct_eq(auth.as_bytes(), app.admin_token.as_bytes()) {
+    let tok = app.admin_token.lock().unwrap_or_else(|e| e.into_inner());
+    if !crypto::ct_eq(auth.as_bytes(), tok.as_bytes()) {
+        drop(tok);
         // Recorded (auditable) but never LOCKED — the owner panic path stays
         // alive while under attack (ADR-0023, kept in v1.1).
         rate_record_fail(app, "admin");
@@ -1963,6 +1966,9 @@ async fn admin_rotate(State(app): State<Shared>, headers: HeaderMap) -> Result<J
         mid
     };
     write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    // keep the LIVE in-memory token in step (v1.2 fix): the owner CLI reads
+    // the file; the server must accept what the file says after a rotation.
+    *app.admin_token.lock().unwrap_or_else(|e| e.into_inner()) = admin_token.clone();
     logline("session credentials ROTATED — the old session password is dead");
     Ok(Json(json!({
         "password": password,
@@ -2214,7 +2220,7 @@ mod tests {
             cfg: Config::default(),
             data_dir: dir.path().clone(),
             home_root: dir.path().clone(),
-            admin_token: "test-admin-token".into(),
+            admin_token: std::sync::Mutex::new("test-admin-token".into()),
             pol: Policy::default(),
         };
         (Arc::new(app), dir)
@@ -2602,6 +2608,9 @@ async fn admin_panic(State(app): State<Shared>, headers: HeaderMap, body: Bytes)
         mid
     };
     write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    // keep the LIVE in-memory token in step (v1.2 fix, e2e-found): the owner
+    // CLI reads the file — panic must not brick it for the rest of the run.
+    *app.admin_token.lock().unwrap_or_else(|e| e.into_inner()) = admin_token.clone();
     app.agents.lock().unwrap_or_else(|e| e.into_inner()).clear();
     logline(&format!(
         "PANIC — {revoked} session(s) revoked, {expired} pending expired, {killed} terminal(s) killed, all credentials rotated"

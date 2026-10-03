@@ -5,11 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FARcontrol — owner console</title>
 <style>
-/* v1.1 console (ADR-0027, research R3/R5) — dark-first, one file, zero external assets. */
+/* v1.2 console (ADR-0032, research r10/r13/r15) — session-first, dark, one file, zero external assets.
+   r15 fixes: badge/pill text #cfe0ff (7.6:1 on #1d3153 — AA at 11px), :focus-visible, disabled-in-flight. */
 :root {
   color-scheme: dark;
   --bg: #0b0e14; --panel: #11151f; --panel2: #161b27; --border: #232a3a;
   --text: #e6e9f0; --dim: #8b93a7; --accent: #4f8cff; --accent2: #1d3153;
+  --accent-hi: #cfe0ff; /* WCAG-safe accent text on accent2 (computed 7.6:1) */
   --ok: #34d399; --ok2: #0f2e22; --warn: #fbbf24; --warn2: #33290b;
   --danger: #f87171; --danger2: #3a1216; --mono: ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -17,6 +19,9 @@
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { margin: 0; font: 14px/1.5 var(--sans); background: var(--bg); color: var(--text); }
+
+/* r15: keyboard focus is always visible */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
 
 /* ---------- login ---------- */
 #login { display: flex; min-height: 100vh; align-items: center; justify-content: center; }
@@ -30,9 +35,10 @@ input[type=password], input[type=text] { width: 100%; background: var(--bg); col
   border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font: 13px var(--mono); }
 input:focus { outline: none; border-color: var(--accent); }
 #err { color: var(--danger); min-height: 18px; font-size: 12.5px; margin: 10px 0; }
+#login .hint { color: var(--dim); font-size: 11.5px; margin-top: 10px; }
 
 /* ---------- app frame ---------- */
-#app { display: none; grid-template-columns: 220px 1fr; min-height: 100vh; }
+#app { display: none; grid-template-columns: 190px 1fr; min-height: 100vh; }
 #app.on { display: grid; }
 aside { background: var(--panel); border-right: 1px solid var(--border); padding: 20px 14px;
   display: flex; flex-direction: column; gap: 4px; position: sticky; top: 0; height: 100vh; }
@@ -44,14 +50,31 @@ aside .mark span { display: block; color: var(--dim); font-size: 10.5px; letter-
 .nav:hover { color: var(--text); background: var(--panel2); }
 .nav.on { color: var(--text); background: var(--accent2); border-color: #2b4a80; }
 .nav .ico { width: 18px; text-align: center; font-family: var(--mono); }
-.nav .badge { margin-left: auto; background: var(--accent2); color: var(--accent); border-radius: 99px;
+.nav .badge { margin-left: auto; background: var(--accent2); color: var(--accent-hi); border-radius: 99px;
   font-size: 11px; padding: 0 8px; min-width: 20px; text-align: center; font-family: var(--mono); }
 aside .foot { margin-top: auto; padding: 10px; color: var(--dim); font-size: 11px; border-top: 1px solid var(--border); }
-main { padding: 26px 30px 60px; max-width: 1080px; }
+main { padding: 0 30px 60px; max-width: 1080px; }
 .page { display: none; }
 .page.on { display: block; }
-h1 { font: 600 19px/1.3 var(--sans); margin: 0 0 4px; }
+h1 { font: 600 19px/1.3 var(--sans); margin: 22px 0 4px; }
 .sub { color: var(--dim); font-size: 12.5px; margin: 0 0 22px; }
+
+/* ---------- session header (r10): always visible, answers WHO/UNTIL/STOP ---------- */
+#sessbar { position: sticky; top: 0; z-index: 20; background: linear-gradient(180deg, var(--panel), rgba(17,21,31,.96));
+  border-bottom: 1px solid var(--border); padding: 12px 0 10px; display: flex; align-items: center;
+  gap: 16px; flex-wrap: wrap; }
+#sessbar .dev { font: 600 14px var(--mono); color: var(--accent); }
+#sessbar .meta { color: var(--dim); font-size: 12px; display: flex; gap: 12px; flex-wrap: wrap; }
+#sessbar .spacer { flex: 1; }
+#agents { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+  border-radius: 99px; padding: 3px 11px; font-size: 11.5px; font-family: var(--mono); color: var(--text);
+  background: var(--panel2); }
+.chip .led { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.chip.stale .led { background: var(--warn); }
+.chip.none { color: var(--dim); border-style: dashed; }
+.chip .t { color: var(--dim); }
+#panicbtn { font-weight: 700; }
 
 /* ---------- components ---------- */
 .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
@@ -73,35 +96,33 @@ tr:last-child td { border-bottom: 0; }
 .ok { color: var(--ok); } .warn { color: var(--warn); } .bad { color: var(--danger); }
 
 .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-family: var(--mono); }
-.pill.scope-to { background: var(--accent2); color: var(--accent); }
+.pill.scope-to { background: var(--accent2); color: var(--accent-hi); }
 .pill.scope-fa { background: var(--warn2); color: var(--warn); }
 .pill.st-active { background: var(--ok2); color: var(--ok); }
 .pill.st-revoked { background: var(--danger2); color: var(--danger); }
 .pill.st-expired { background: #1d2129; color: var(--dim); }
 .pill.st-pending { background: var(--warn2); color: var(--warn); }
-.pill.dev { background: #1d2129; color: var(--dim); }
 
 button { background: var(--panel2); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
   padding: 7px 14px; font: 12.5px var(--sans); cursor: pointer; transition: background .15s; }
-button:hover { background: #1c2330; }
-button.primary { background: var(--accent2); border-color: #2b4a80; color: #cfe0ff; }
-button.primary:hover { background: #234a8a; }
+button:hover:not(:disabled) { background: #1c2330; }
+button.primary { background: var(--accent2); border-color: #2b4a80; color: var(--accent-hi); }
+button.primary:hover:not(:disabled) { background: #234a8a; }
 button.good { background: var(--ok2); border-color: #1a5c40; color: var(--ok); }
-button.good:hover { background: #16452f; }
+button.good:hover:not(:disabled) { background: #16452f; }
 button.danger { background: var(--danger2); border-color: #6e2430; color: var(--danger); }
-button.danger:hover { background: #571a22; }
+button.danger:hover:not(:disabled) { background: #571a22; }
 button.ghost { background: transparent; border-color: transparent; color: var(--dim); }
-button.ghost:hover { color: var(--text); background: var(--panel2); }
+button.ghost:hover:not(:disabled) { color: var(--text); background: var(--panel2); }
 button.mini { padding: 4px 10px; font-size: 11.5px; }
+/* r15: an in-flight action disables its button — no double-approve */
+button:disabled { opacity: .45; cursor: wait; }
 select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px;
   padding: 7px 9px; font: 12.5px var(--sans); }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 
-/* device cards */
-.devcard { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start; }
-.devcard .id { font: 600 15px var(--mono); color: var(--accent); cursor: pointer; }
-.devcard .id:hover { text-decoration: underline; }
-.devrow { display: flex; gap: 14px; flex-wrap: wrap; color: var(--dim); font-size: 12px; margin-top: 8px; }
+.requestcard { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: start;
+  border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; background: var(--panel2); }
 
 /* modal + toast */
 #modalwrap { position: fixed; inset: 0; background: rgba(5,8,12,.72); display: none;
@@ -135,12 +156,15 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--bord
 .chainchip.bad .led { background: var(--danger); }
 .chainchip.bad { color: var(--danger); border-color: #6e2430; }
 
+.kv { display: grid; grid-template-columns: 170px 1fr; gap: 8px 14px; font-size: 12.5px; }
+.kv .k { color: var(--dim); }
+
 @media (max-width: 860px) {
   #app.on { grid-template-columns: 64px 1fr; }
   aside .mark span, .nav .t, aside .foot .full { display: none; }
   aside .mark { font-size: 13px; padding: 4px 4px 14px; text-align: center; }
   .nav { justify-content: center; padding: 9px 4px; }
-  main { padding: 18px 14px 50px; }
+  main { padding: 0 14px 50px; }
   .grid2 { grid-template-columns: 1fr; }
 }
 </style>
@@ -151,11 +175,12 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--bord
 <div id="login">
   <div class="box">
     <div class="mark"><b>FAR</b>CONTROL</div>
-    <p class="sub">owner console — loopback only, approval-gated access for AI agents</p>
+    <p class="sub">owner console — the current FARcontrol session</p>
     <label for="pw">admin token</label>
-    <input type="password" id="pw" placeholder="the token 'frtrol start' printed" autocomplete="off">
-    <div id="err"></div>
+    <input type="password" id="pw" placeholder="the token 'frtrol start' printed" autocomplete="off" aria-label="admin token">
+    <div id="err" role="alert"></div>
     <button id="loginbtn" class="primary" style="width:100%">log in</button>
+    <p class="hint">the token rotates on every <span class="mono">frtrol start</span> — the current one is in the start output</p>
   </div>
 </div>
 
@@ -163,21 +188,32 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--bord
 <div id="app">
   <aside>
     <div class="mark"><b>FAR</b>CONTROL<span id="ver"></span></div>
-    <div class="nav on" data-page="dash"><span class="ico">◧</span><span class="t">Dashboard</span><span class="badge" id="navpending"></span></div>
+    <div class="nav on" data-page="activity"><span class="ico">◧</span><span class="t">Activity</span><span class="badge" id="navpending"></span></div>
     <div class="nav" data-page="sessions"><span class="ico">≡</span><span class="t">Sessions</span><span class="badge" id="navsessions"></span></div>
-    <div class="nav" data-page="devices"><span class="ico">▤</span><span class="t">Devices</span><span class="badge" id="navdevices"></span></div>
     <div class="nav" data-page="audit"><span class="ico">☰</span><span class="t">Audit</span></div>
-    <div class="nav" data-page="danger"><span class="ico">!</span><span class="t">Danger</span></div>
+    <div class="nav" data-page="advanced"><span class="ico">⚙</span><span class="t">Advanced</span></div>
     <div class="foot">
-      <div id="footline"></div>
+      <div id="footline" class="full"></div>
       <button id="logout" class="ghost mini" style="margin-top:8px">log out</button>
     </div>
   </aside>
   <main>
-    <!-- DASHBOARD -->
-    <div class="page on" id="page-dash">
-      <h1>Dashboard</h1>
-      <p class="sub" id="dashsub">the AI asks, you approve, access expires</p>
+    <!-- session header (r10): always visible, answers WHO is connected / UNTIL when / HOW to stop -->
+    <div id="sessbar">
+      <span class="dev mono" id="hdrdev" title="this machine's stable device id"></span>
+      <span class="meta">
+        <span id="hdrage" title="this daemon run minted the current credentials"></span>
+        <span id="hdrtls"></span>
+      </span>
+      <span class="spacer"></span>
+      <span id="agents" role="status" aria-live="polite" aria-label="connected agents"></span>
+      <button id="panicbtn" class="danger mini" aria-label="emergency stop — revoke everything and rotate every credential">PANIC</button>
+    </div>
+
+    <!-- ACTIVITY -->
+    <div class="page on" id="page-activity">
+      <h1>Activity</h1>
+      <p class="sub" id="actsub">the AI asks, you approve, access expires</p>
       <div class="kpis" id="kpis"></div>
       <div class="card"><div class="title">Pending requests</div><div id="pending"></div></div>
       <div class="card"><div class="title">Active sessions</div><div id="live"></div></div>
@@ -191,31 +227,18 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--bord
       <div class="card"><div id="seslist"></div></div>
     </div>
 
-    <!-- DEVICES -->
-    <div class="page" id="page-devices">
-      <h1>Devices</h1>
-      <p class="sub">an agent device carries only its id + password — login rotates its key</p>
-      <div class="card">
-        <div class="title">Register a device</div>
-        <div class="actions">
-          <input type="text" id="devname" placeholder="device name (e.g. office-laptop)" style="flex:1;min-width:220px">
-          <button id="devadd" class="primary">add device</button>
-        </div>
-      </div>
-      <div id="devlist"></div>
-    </div>
-
     <!-- AUDIT -->
     <div class="page" id="page-audit">
       <h1>Audit</h1>
       <p class="sub">tamper-evident hash chain — security-relevant actions only</p>
       <div class="actions" style="margin-bottom:14px">
-        <input type="text" id="auditq" placeholder="search actor / action / subject…" style="flex:1;min-width:200px">
-        <select id="auditlvl">
+        <input type="text" id="auditq" placeholder="search actor / action / subject…" style="flex:1;min-width:200px" aria-label="search audit events">
+        <select id="auditlvl" aria-label="filter audit events">
           <option value="">all events</option>
           <option value="auth">auth events</option>
-          <option value="device">device events</option>
+          <option value="agent">agent events</option>
           <option value="session">session events</option>
+          <option value="request">request events</option>
           <option value="owner">owner decisions</option>
           <option value="system">system events</option>
         </select>
@@ -224,39 +247,60 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--bord
       <div class="card"><div id="auditlist"></div></div>
     </div>
 
-    <!-- DANGER -->
-    <div class="page" id="page-danger">
-      <h1>Danger zone</h1>
-      <p class="sub">when in doubt, panic — everything dies, nothing is lost</p>
+    <!-- ADVANCED -->
+    <div class="page" id="page-advanced">
+      <h1>Advanced</h1>
+      <p class="sub">session plumbing — fingerprint, policy, credential rotation, session stop</p>
+      <div class="grid2">
+        <div class="card">
+          <div class="title">This session</div>
+          <div class="kv" id="sessioninfo"></div>
+        </div>
+        <div class="card">
+          <div class="title">Policy in force</div>
+          <div class="kv" id="policyinfo"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="title">Credential rotation</div>
+        <p class="dim" style="font-size:12.5px;margin:0 0 12px">
+          rotates the session password + admin token (shown once). Connected agents keep working —
+          anyone who only had the old password needs the new one. The session key rotates on panic or restart.
+        </p>
+        <button id="rotatebtn" class="primary">rotate session credentials</button>
+      </div>
+      <div class="card">
+        <div class="title">End the session</div>
+        <p class="dim" style="font-size:12.5px;margin:0 0 12px">
+          graceful stop — equals <span class="mono">frtrol stop</span>. Every credential from this run
+          dies; the next start prints a fresh session password.
+        </p>
+        <button id="stopbtn">stop the session</button>
+      </div>
       <div class="panicbox">
         <h2>EMERGENCY STOP</h2>
         <p>revokes every session · expires every pending request · kills every terminal ·<br>
-           rotates every device key (all agents must re-login)</p>
-        <button id="panicbtn" class="danger">PANIC — kill all access</button>
-      </div>
-      <div class="card" style="margin-top:18px">
-        <div class="title">Fingerprint</div>
-        <div class="mono dim" id="fp"></div>
-        <div class="dim" style="font-size:11.5px;margin-top:6px">compare with the fingerprint an agent shows at login (SSH-style TOFU)</div>
+           rotates EVERY credential (password + key + admin token — shown once)</p>
+        <button id="panicbig" class="danger">PANIC — kill all access</button>
       </div>
     </div>
   </main>
 </div>
 
 <!-- modal + toast -->
-<div id="modalwrap"><div id="modal"></div></div>
-<div id="toast"></div>
+<div id="modalwrap"><div id="modal" role="dialog" aria-modal="true"></div></div>
+<div id="toast" aria-live="polite"></div>
 
 <script>
 "use strict";
-/* ADR-0017/0027 security architecture, unchanged: one self-contained file, no
-   external assets, no HTML-string sinks (every render is DOM + textContent),
+/* ADR-0017/0027/0032 security architecture, unchanged: one self-contained file,
+   no external assets, no HTML-string sinks (every render is DOM + textContent),
    CSRF = JS-only X-Far-Ui header, SameSite=Strict cookie, login feeds backoff. */
 
 var UIHDR = { "Content-Type": "application/json", "X-Far-Ui": "1" };
 var POLL = null;
 var ST = null;          // last /ui/state payload
-var PAGE = "dash";
+var PAGE = "activity";
 
 function api(path, body) {
   return fetch(path, {
@@ -282,6 +326,14 @@ function el(tag, cls, text) {
 function clear(n) { while (n.firstChild) { n.removeChild(n.firstChild); } }
 function pill(cls, text) { return el("span", "pill " + cls, text); }
 
+/* r15: run an action with its button disabled while in flight (no double-fire) */
+function withBtn(btn, fn) {
+  if (btn.disabled) { return; }
+  btn.disabled = true;
+  fn().then(function (v) { btn.disabled = false; return v; },
+            function (e) { btn.disabled = false; throw e; });
+}
+
 function toast(text, kind) {
   var t = el("div", "toast" + (kind ? " " + kind : ""), text);
   document.getElementById("toast").appendChild(t);
@@ -289,6 +341,7 @@ function toast(text, kind) {
 }
 function copyBtn(getText, label) {
   var b = el("button", "ghost mini", label || "copy");
+  b.setAttribute("aria-label", "copy " + (label || "value"));
   b.addEventListener("click", function () {
     var txt = (typeof getText === "function") ? getText() : getText;
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -327,6 +380,13 @@ function ago(ts) {
   if (d < 86400) { return Math.floor(d / 3600) + "h ago"; }
   return Math.floor(d / 86400) + "d ago";
 }
+function age(ts) {
+  if (!ts) { return ""; }
+  var d = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+  if (d < 60) { return d + "s up"; }
+  if (d < 3600) { return Math.floor(d / 60) + "m up"; }
+  return Math.floor(d / 3600) + "h " + Math.floor((d % 3600) / 60) + "m up";
+}
 function countdown(sec) {
   if (sec === null || sec === undefined) { return ""; }
   if (sec <= 0) { return "expired"; }
@@ -345,7 +405,8 @@ function showApp() {
   document.getElementById("login").style.display = "none";
   document.getElementById("app").classList.add("on");
   if (POLL) { clearInterval(POLL); }
-  POLL = setInterval(function () { refresh(); }, 3000);
+  /* r11/§44: poll while the tab is visible, pause in the background */
+  POLL = setInterval(function () { if (!document.hidden) { refresh(); } }, 3000);
   refresh();
 }
 document.getElementById("loginbtn").addEventListener("click", doLogin);
@@ -399,15 +460,38 @@ function render() {
   document.getElementById("ver").textContent = "v" + (ST.version || "?");
   document.getElementById("footline").textContent =
     (ST.tls ? "https · " : "http · ") + (ST.keyring_mode ? "kernel keyring" : "file secret store");
-  document.getElementById("dashsub").textContent =
-    "the AI asks, you approve, access expires — " + (ST.policy ? "sessions " + ST.policy.session_hours + "h" : "");
 
-  var pending = ST.pending || [], sessions = ST.sessions || [], devices = ST.devices || [], audit = ST.audit || [];
+  var pending = ST.pending || [], sessions = ST.sessions || [], audit = ST.audit || [];
+  var agents = ST.agents || [];
   var live = sessions.filter(function (s) { return s.effective_status === "active"; });
+
+  /* session header (r10) */
+  var hdrdev = document.getElementById("hdrdev");
+  clear(hdrdev);
+  hdrdev.textContent = ST.device_id || "?";
+  hdrdev.appendChild(copyBtn(function () { return ST.device_id || ""; }, "copy id"));
+  document.getElementById("hdrage").textContent = "session " + age(ST.session_started_at) + " · " +
+    (ST.session_id || "");
+  document.getElementById("hdrtls").textContent = ST.tls ? "TLS" : "no TLS";
+  var host = document.getElementById("agents");
+  clear(host);
+  if (!agents.length) {
+    host.appendChild(el("span", "chip none", "no agent connected"));
+  } else {
+    agents.forEach(function (a) {
+      var c = el("span", "chip" + (a.connected ? "" : " stale"));
+      c.appendChild(el("span", "led"));
+      c.appendChild(el("span", null, a.name));
+      c.appendChild(el("span", "t", " · " + ago(a.last_seen)));
+      c.title = a.connected ? "agent runtime heartbeating" : "heartbeat went silent";
+      host.appendChild(c);
+    });
+  }
+  document.getElementById("actsub").textContent =
+    "the AI asks, you approve, access expires — " + (ST.policy ? "grants " + ST.policy.session_hours + "h" : "");
 
   document.getElementById("navpending").textContent = pending.length || "";
   document.getElementById("navsessions").textContent = live.length || "";
-  document.getElementById("navdevices").textContent = devices.length || "";
 
   /* KPI cards */
   var k = document.getElementById("kpis");
@@ -415,7 +499,7 @@ function render() {
   [
     { n: pending.length, l: "pending requests", cls: pending.length ? "warn" : "" },
     { n: live.length, l: "active sessions", cls: live.length ? "ok" : "" },
-    { n: devices.length, l: "devices", cls: "acc" },
+    { n: agents.length, l: "agents connected", cls: agents.length ? "ok" : "" },
     { n: audit.length, l: "audit events", cls: "" },
   ].forEach(function (x) {
     var c = el("div", "kpi " + x.cls);
@@ -427,12 +511,11 @@ function render() {
   renderPending(pending);
   renderSessions(live, document.getElementById("live"), true);
   renderSessions(sessions, document.getElementById("seslist"), false);
-  renderDevices(devices);
   renderAudit(audit);
-  document.getElementById("fp").textContent = ST.fingerprint || "(TLS disabled)";
+  renderAdvanced();
 }
 
-/* ---------- pending requests (dashboard) ---------- */
+/* ---------- pending requests (activity) ---------- */
 function renderPending(pending) {
   var host = document.getElementById("pending");
   clear(host);
@@ -441,21 +524,21 @@ function renderPending(pending) {
     return;
   }
   pending.forEach(function (r) {
-    var card = el("div", "devcard");
+    var card = el("div", "requestcard");
     var left = el("div");
     var idrow = el("div", "mono", r.id + "  ");
     idrow.appendChild(pill("scope-" + (r.scope === "full_access" ? "fa" : "to"), r.scope));
     left.appendChild(idrow);
     var who = el("div", "sans");
     who.appendChild(el("b", null, r.agent ? r.agent.name : (r.agent_name || "agent")));
-    who.appendChild(el("span", "dim", "  asked " + r.requested_hours + "h · " + ago(r.created_at) +
-      (r.device_id ? " · " + r.device_id : " · legacy")));
+    who.appendChild(el("span", "dim", "  asked " + r.requested_hours + "h · " + ago(r.created_at)));
     left.appendChild(who);
     if (r.reason) { left.appendChild(el("div", "dim", "“" + r.reason + "”")); }
     card.appendChild(left);
 
     var act = el("div", "actions");
     var dur = el("select");
+    dur.setAttribute("aria-label", "grant duration");
     [r.requested_hours, 5, 8, 12, 24, 48, 72].forEach(function (h, i) {
       var o = el("option", null, i === 0 ? (h + "h (as asked)") : h + "h");
       o.value = String(h);
@@ -464,16 +547,20 @@ function renderPending(pending) {
     act.appendChild(dur);
     var ok = el("button", "good", "approve");
     ok.addEventListener("click", function () {
-      api("/ui/approve", { request_id: r.id, hours: parseFloat(dur.value) })
-        .then(function (v) { toast("approved → " + (v.session && v.session.id), "good"); refresh(); },
-              function (e) { toast(e.message, "bad"); });
+      withBtn(ok, function () {
+        return api("/ui/approve", { request_id: r.id, hours: parseFloat(dur.value) })
+          .then(function (v) { toast("approved → " + (v.session && v.session.id), "good"); refresh(); },
+                function (e) { toast(e.message, "bad"); });
+      });
     });
     act.appendChild(ok);
     var no = el("button", "danger", "deny");
     no.addEventListener("click", function () {
-      api("/ui/deny", { request_id: r.id, reason: "denied from web console" })
-        .then(function () { toast("denied " + r.id, "bad"); refresh(); },
-              function (e) { toast(e.message, "bad"); });
+      withBtn(no, function () {
+        return api("/ui/deny", { request_id: r.id, reason: "denied from web console" })
+          .then(function () { toast("denied " + r.id, "bad"); refresh(); },
+                function (e) { toast(e.message, "bad"); });
+      });
     });
     act.appendChild(no);
     card.appendChild(act);
@@ -492,7 +579,7 @@ function renderSessions(sessions, host, onlyLive) {
   }
   var t = el("table");
   var tr = el("tr");
-  ["ID", "AGENT", "SCOPE", "DEVICE", "STATE", "EXPIRES"].forEach(function (h) { tr.appendChild(el("th", null, h)); });
+  ["ID", "AGENT", "SCOPE", "STATE", "EXPIRES", ""].forEach(function (h) { tr.appendChild(el("th", null, h)); });
   t.appendChild(tr);
   sessions.forEach(function (s) {
     var row = el("tr");
@@ -500,10 +587,9 @@ function renderSessions(sessions, host, onlyLive) {
     row.appendChild(el("td", "sans", s.agent ? s.agent.name : (s.agent_name || "agent")));
     row.appendChild(el("td", null, ""));
     row.lastChild.appendChild(pill("scope-" + (s.scope === "full_access" ? "fa" : "to"), s.scope));
-    row.appendChild(el("td", "mono dim", s.device_id || "legacy"));
     var st = el("td", "sans");
     var eff = s.effective_status || s.status;
-    st.appendChild(pill("st-" === "" ? "" : "st-" + eff, eff));
+    st.appendChild(pill("st-" + eff, eff));
     if (eff === "active") {
       st.appendChild(el("span", "dim", " " + countdown(s.seconds_remaining)));
     }
@@ -513,9 +599,11 @@ function renderSessions(sessions, host, onlyLive) {
       var act = el("td", "sans");
       var rv = el("button", "danger mini", "revoke");
       rv.addEventListener("click", function () {
-        api("/ui/revoke", { session_id: s.id, reason: "revoked from web console" })
-          .then(function () { toast("revoked " + s.id + " — access died", "bad"); refresh(); },
-                function (e) { toast(e.message, "bad"); });
+        withBtn(rv, function () {
+          return api("/ui/revoke", { session_id: s.id, reason: "revoked from web console" })
+            .then(function () { toast("revoked " + s.id + " — access died", "bad"); refresh(); },
+                  function (e) { toast(e.message, "bad"); });
+        });
       });
       act.appendChild(rv);
       row.appendChild(act);
@@ -527,90 +615,6 @@ function renderSessions(sessions, host, onlyLive) {
   host.appendChild(t);
 }
 
-/* ---------- devices ---------- */
-function renderDevices(devices) {
-  var host = document.getElementById("devlist");
-  clear(host);
-  if (!devices.length) {
-    var c = el("div", "card");
-    c.appendChild(el("div", "empty", "no devices yet — add one above, then hand the id + password to your AI agent."));
-    host.appendChild(c);
-    return;
-  }
-  devices.forEach(function (d) {
-    var card = el("div", "card");
-    var box = el("div", "devcard");
-    var left = el("div");
-    var idrow = el("div", "mono");
-    var idspan = el("span", "id", d.id);
-    idrow.appendChild(idspan);
-    idrow.appendChild(copyBtn(function () { return d.id; }));
-    if (d.key_only) { idrow.appendChild(pill("dev", "key-only legacy")); }
-    else if (d.login_enabled) { idrow.appendChild(pill("st-active", "active")); }
-    else { idrow.appendChild(pill("st-revoked", "locked")); }
-    left.appendChild(idrow);
-    var meta = el("div", "devrow");
-    meta.appendChild(el("span", null, d.name));
-    meta.appendChild(el("span", null, "last seen " + ago(d.last_seen)));
-    meta.appendChild(el("span", null, d.active_sessions + " active session(s)"));
-    if (d.last_rotate) { meta.appendChild(el("span", null, "key rotated " + ago(d.last_rotate))); }
-    left.appendChild(meta);
-    box.appendChild(left);
-
-    var act = el("div", "actions");
-    act.style.flexDirection = "column";
-    if (!d.key_only) {
-      var pw = el("button", "mini", "rotate password");
-      pw.addEventListener("click", function () {
-        api("/ui/device/passwd", { id: d.id }).then(function (v) {
-          showSecretModal("New device password", d.id, v.password);
-          refresh();
-        }, function (e) { toast(e.message, "bad"); });
-      });
-      act.appendChild(pw);
-      if (d.login_enabled) {
-        var lk = el("button", "danger mini", "lock");
-        lk.addEventListener("click", function () {
-          api("/ui/device/lock", { id: d.id }).then(function (v) {
-            toast("locked " + d.id + " — " + (v.revoked_sessions || []).length + " session(s) revoked", "bad");
-            refresh();
-          }, function (e) { toast(e.message, "bad"); });
-        });
-        act.appendChild(lk);
-      } else {
-        var ul = el("button", "good mini", "unlock");
-        ul.addEventListener("click", function () {
-          api("/ui/device/unlock", { id: d.id }).then(function () { toast("unlocked " + d.id, "good"); refresh(); },
-                                                     function (e) { toast(e.message, "bad"); });
-        });
-        act.appendChild(ul);
-      }
-    }
-    var rm = el("button", "danger mini", "remove");
-    rm.addEventListener("click", function () {
-      modal("Remove device " + d.id + "?", function (m) {
-        m.appendChild(el("div", "body", "The device key is destroyed and its sessions are revoked. The password will never work again. This cannot be undone."));
-      }, null);
-      // second button inside the modal body (custom confirm)
-      var m = document.getElementById("modal");
-      var row = m.lastChild;
-      var yes = el("button", "danger", "remove device");
-      yes.addEventListener("click", function () {
-        document.getElementById("modalwrap").classList.remove("on");
-        api("/ui/device/remove", { id: d.id }).then(function (v) {
-          toast("removed " + d.id + " — " + (v.revoked_sessions || []).length + " session(s) revoked", "bad");
-          refresh();
-        }, function (e) { toast(e.message, "bad"); });
-      });
-      row.insertBefore(yes, row.firstChild);
-    });
-    act.appendChild(rm);
-    box.appendChild(act);
-    card.appendChild(box);
-    host.appendChild(card);
-  });
-}
-
 function showSecretModal(title, deviceId, password) {
   modal(title, function (m) {
     m.appendChild(el("div", "body", "Shown ONCE — store it now. The agent needs only these two things:"));
@@ -619,7 +623,7 @@ function showSecretModal(title, deviceId, password) {
     box1.appendChild(el("div", null, deviceId));
     m.appendChild(box1);
     var box2 = el("div", "secret");
-    box2.appendChild(el("div", "lab", "password"));
+    box2.appendChild(el("div", "lab", "session password"));
     box2.appendChild(el("div", null, password));
     m.appendChild(box2);
     var row = el("div", "actions");
@@ -636,17 +640,59 @@ function showSecretModal(title, deviceId, password) {
   });
 }
 
-document.getElementById("devadd").addEventListener("click", function () {
-  var name = document.getElementById("devname").value.trim();
-  if (!name) { toast("give the device a name first", "bad"); return; }
-  api("/ui/device/add", { name: name }).then(function (v) {
-    document.getElementById("devname").value = "";
-    showSecretModal("Device created — " + name, v.device_id, v.password);
-    refresh();
-  }, function (e) { toast(e.message, "bad"); });
+/* ---------- advanced (session plumbing) ---------- */
+function renderAdvanced() {
+  var si = document.getElementById("sessioninfo");
+  if (!si) { return; }
+  clear(si);
+  var kv = function (k, v) {
+    var r = el("div", "mono");
+    r.appendChild(el("span", "k", k));
+    r.appendChild(el("span", null, v));
+    return r;
+  };
+  si.appendChild(kv("device id", ST.device_id || "?"));
+  si.appendChild(kv("session id", ST.session_id || "?"));
+  si.appendChild(kv("started", new Date((ST.session_started_at || 0) * 1000).toISOString().replace("T", " ").slice(0, 16) + "Z"));
+  si.appendChild(kv("secret store", ST.keyring_mode ? "kernel keyring" : "state.db (0600 dir)"));
+  var pi = document.getElementById("policyinfo");
+  clear(pi);
+  if (ST.policy) {
+    pi.appendChild(kv("grant duration", ST.policy.session_hours + "h"));
+    pi.appendChild(kv("exec timeout", ST.policy.exec_timeout_s + "s"));
+    pi.appendChild(kv("max output", ST.policy.max_output_kib + " KiB"));
+    pi.appendChild(kv("max file", ST.policy.max_file_kib + " KiB"));
+  }
+}
+
+document.getElementById("rotatebtn").addEventListener("click", function () {
+  var btn = this;
+  withBtn(btn, function () {
+    return api("/ui/rotate", {}).then(function (v) {
+      showSecretModal("Credentials rotated — " + (v.device_id || ""), v.device_id, v.password);
+      refresh();
+    }, function (e) { toast(e.message, "bad"); });
+  });
 });
-document.getElementById("devname").addEventListener("keydown", function (ev) {
-  if (ev.key === "Enter") { document.getElementById("devadd").click(); }
+
+document.getElementById("stopbtn").addEventListener("click", function () {
+  var btn = this;
+  modal("End the session?", function (m) {
+    m.appendChild(el("div", "body", "Graceful stop — every credential from this run dies (the agent's key, the session password, this console's admin token). The next start prints a fresh session password. Approved grants persist but need a new agent login."));
+  });
+  var m = document.getElementById("modal");
+  var row = m.lastChild;
+  var yes = el("button", "danger", "yes — stop the session");
+  yes.addEventListener("click", function () {
+    document.getElementById("modalwrap").classList.remove("on");
+    withBtn(btn, function () {
+      return api("/ui/stop", {}).then(function () {
+        toast("session ending — this page will stop responding shortly", "bad");
+        setTimeout(function () { location.reload(); }, 2500);
+      }, function (e) { toast(e.message, "bad"); });
+    });
+  });
+  row.insertBefore(yes, row.firstChild);
 });
 
 /* ---------- audit ---------- */
@@ -661,7 +707,6 @@ function renderAudit(audit) {
   var lvl = document.getElementById("auditlvl").value || "";
   var rows = audit.filter(function (e) {
     if (lvl && String(e.action || "").indexOf(lvl + ".") !== 0) {
-      // category filter: auth.*, device.*, session.*, request.*, system.*; owner = actor
       if (!(lvl === "owner" && String(e.actor || "") === "owner")) { return false; }
     }
     if (q) {
@@ -690,7 +735,7 @@ function renderAudit(audit) {
     row.appendChild(el("td", "mono", e.actor || "?"));
     var a = el("td", "mono");
     var color = String(e.action || "").indexOf("auth") === 0 ? "warn"
-      : (String(e.action || "").indexOf("device") === 0 ? "" : "dim");
+      : (String(e.action || "").indexOf("agent") === 0 ? "ok" : "dim");
     a.appendChild(el("span", color, e.action || "?"));
     row.appendChild(a);
     row.appendChild(el("td", "mono dim", e.subject || ""));
@@ -699,12 +744,12 @@ function renderAudit(audit) {
   host.appendChild(t);
 }
 
-/* recent audit on dashboard: last 8, compact */
+/* recent audit on activity page: last 8, compact */
 (function () {
   var orig = renderAudit;
   renderAudit = function (audit) {
     var host = document.getElementById("recent");
-    if (host && PAGE === "dash") {
+    if (host && PAGE === "activity") {
       clear(host);
       audit.slice(0, 8).forEach(function (e) {
         var line = el("div", "mono");
@@ -722,10 +767,10 @@ function renderAudit(audit) {
   };
 })();
 
-/* ---------- danger ---------- */
-document.getElementById("panicbtn").addEventListener("click", function () {
+/* ---------- panic (r10: persistent in the header; full-size in Advanced) ---------- */
+function doPanic() {
   modal("PANIC — kill all access?", function (m) {
-    m.appendChild(el("div", "body", "Every session is revoked, every pending request expires, every terminal dies, and every device key rotates. Agents re-login with their device id + password. This is the point of the button — but it is loud."));
+    m.appendChild(el("div", "body", "Every session is revoked, every pending request expires, every terminal dies, and EVERY credential rotates (session password + session key + admin token). The new session password is shown once afterwards."));
   });
   var m = document.getElementById("modal");
   var row = m.lastChild;
@@ -733,13 +778,14 @@ document.getElementById("panicbtn").addEventListener("click", function () {
   yes.addEventListener("click", function () {
     document.getElementById("modalwrap").classList.remove("on");
     api("/ui/panic", { reason: "panic from web console" }).then(function (v) {
-      toast("PANIC done — " + (v.revoked_sessions || 0) + " session(s) revoked, " +
-            (v.rotated_device_keys || 0) + " device key(s) rotated", "bad");
+      showSecretModal("PANIC done — new session password", v.device_id, v.password);
       refresh();
     }, function (e) { toast(e.message, "bad"); });
   });
   row.insertBefore(yes, row.firstChild);
-});
+}
+document.getElementById("panicbtn").addEventListener("click", doPanic);
+document.getElementById("panicbig").addEventListener("click", doPanic);
 
 /* ---------- boot: try an authenticated poll ---------- */
 api("/ui/state").then(showApp, showLogin);

@@ -44,6 +44,8 @@ pub fn routes() -> Router<Shared> {
         .route("/ui/panic", axum::routing::post(ui_panic))
         // v1.2 (ADR-0032): session stop from the console — same path as `frtrol stop`.
         .route("/ui/stop", axum::routing::post(ui_stop))
+        // v1.2 (ADR-0032): credential rotation from the console (Advanced tab).
+        .route("/ui/rotate", axum::routing::post(ui_rotate))
 }
 
 // ============================================================
@@ -134,7 +136,9 @@ async fn ui_login(State(app): State<Shared>, headers: HeaderMap, body: Bytes) ->
     }
     rate_limit_check(&app, "webui")?;
     let b: LoginBody = parse_body(&body)?;
-    if !crate::crypto::ct_eq(b.password.trim().as_bytes(), app.admin_token.as_bytes()) {
+    let tok = app.admin_token.lock().unwrap_or_else(|e| e.into_inner());
+    if !crate::crypto::ct_eq(b.password.trim().as_bytes(), tok.as_bytes()) {
+        drop(tok);
         rate_record_fail(&app, "webui");
         ui_audit(&app, "ui.login", None, json!({ "ok": false }));
         return Err(ApiError::unauthorized("ui_login_failed", "wrong password (it is the admin token — see 'frtrol start' output)"));
@@ -321,6 +325,8 @@ async fn ui_panic(State(app): State<Shared>, headers: HeaderMap, body: Bytes) ->
         mid
     };
     crate::server::write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    // keep the LIVE in-memory token in step (v1.2 fix, e2e-found)
+    *app.admin_token.lock().unwrap_or_else(|e| e.into_inner()) = admin_token.clone();
     app.agents.lock().unwrap_or_else(|e| e.into_inner()).clear();
     ui_audit(&app, "ui.panic", None, json!({ "revoked_sessions": revoked, "expired_pending": expired, "killed_terminals": killed, "credentials_rotated": "password+key+admin_token" }));
     logline(&format!("PANIC via web UI — {revoked} revoked, {expired} pending expired, {killed} terminals killed, credentials rotated"));
@@ -343,6 +349,37 @@ async fn ui_stop(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<V
     logline("shutdown requested via web UI — ending session");
     app.shutdown.notify_waiters();
     Ok(Json(json!({ "ok": true, "note": "session ending — this page will stop responding" })))
+}
+
+/// v1.2 (ADR-0032): rotate the session password + admin token from the
+/// console — mirrors admin_rotate; the new password is shown ONCE in the modal.
+async fn ui_rotate(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
+    verify_ui(&app, &headers, true)?;
+    let password = crate::crypto::gen_password();
+    let admin_token = crate::crypto::gen_token();
+    let machine_id = {
+        let conn = lock(&app);
+        let mid = state::machine_id(&conn);
+        let hash = crate::crypto::password_hash(&password).map_err(ApiError::from)?;
+        conn.execute(
+            "UPDATE devices SET password_hash = ?1, last_rotate = ?2 WHERE id = ?3",
+            rusqlite::params![hash, state::now(), mid],
+        )
+        .map_err(ApiError::from)?;
+        state::set_meta(&conn, "admin_token", &admin_token).map_err(ApiError::from)?;
+        mid
+    };
+    crate::server::write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    // keep the LIVE in-memory token in step (v1.2 fix, e2e-found)
+    *app.admin_token.lock().unwrap_or_else(|e| e.into_inner()) = admin_token.clone();
+    ui_audit(&app, "ui.rotate", Some(&machine_id), json!({ "note": "session password + admin token rotated (key untouched)" }));
+    logline("session credentials ROTATED via web UI — the old session password is dead");
+    Ok(Json(json!({
+        "password": password,
+        "admin_token": admin_token,
+        "device_id": machine_id,
+        "note": "shown once — connected agents keep working",
+    })))
 }
 
 // ============================================================
@@ -374,7 +411,7 @@ mod tests {
             cfg: crate::config::Config::default(),
             data_dir: dir.clone(),
             home_root: dir.clone(),
-            admin_token: "adminpw".into(),
+            admin_token: std::sync::Mutex::new("adminpw".into()),
             pol: crate::policy::Policy::default(),
         })
     }

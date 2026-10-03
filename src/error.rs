@@ -98,7 +98,8 @@ pub fn exit_for(err_code: &str) -> i32 {
     match err_code {
         // authentication failures
         "auth_failed" | "invalid_token" | "missing_headers" | "nonce_replayed"
-        | "invalid_signature" | "signature_invalid" | "timestamp_out_of_range" | "admin_auth_failed" => 3,
+        | "invalid_signature" | "signature_invalid" | "timestamp_out_of_range" | "admin_auth_failed"
+        | "invalid_credentials" | "invalid_device_id" | "device_locked" | "login_disabled" => 3,
         // authorization denials (valid identity, no authority / access dead)
         "scope_denied" | "session_not_found" | "session_not_active" | "session_expired"
         | "session_revoked" | "request_not_found" | "request_denied" | "path_denied"

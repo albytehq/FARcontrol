@@ -204,6 +204,20 @@ fn err_code(body: &str) -> String {
         .unwrap_or_default()
 }
 
+/// call() with the §66 transport mapping (r14, e2e-found): a network failure
+/// prints the r9-style error and exits 6 (5 on timeout) at the CLI boundary —
+/// the previous anyhow propagation collapsed every transport error to a
+/// generic 1, hiding the contract from scripts.
+fn call_net(ctx: &Ctx, method: &str, path: &str, query: Option<&str>, body: Option<&str>) -> (u16, String) {
+    match call(ctx, method, path, query, body) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("✗ {e} [fail closed]");
+            std::process::exit(net_exit(&e))
+        }
+    }
+}
+
 fn emit(_ctx: &Ctx, code: u16, body: String) -> anyhow::Result<i32> {
     if (200..300).contains(&code) {
         // compact single-line JSON — easiest for an LLM/tool to parse
@@ -345,17 +359,22 @@ fn resolve_base(
     )
 }
 
-/// Build the pinned-TLS (or plain) HTTP agent for a base URL. TOFU: first
-/// connect captures + pins the daemon cert into the agent home (ADR-0025 §4).
-fn pinned_agent(home: &Path, base: &str, timeout: Duration) -> anyhow::Result<ureq::Agent> {
+/// Build the pinned-TLS (or plain) HTTP agent for a base URL, and report the
+/// SHA-256 fingerprint of the cert actually in use ("" for plain http). TOFU:
+/// first connect captures + pins the daemon cert into the agent home
+/// (ADR-0025 §4).
+fn pinned_agent(home: &Path, base: &str, timeout: Duration) -> anyhow::Result<(ureq::Agent, String)> {
     if !base.starts_with("https") {
-        return Ok(ureq::AgentBuilder::new().timeout(timeout).build());
+        return Ok((ureq::AgentBuilder::new().timeout(timeout).build(), String::new()));
     }
     let pin = home.join("cert.pem");
     if pin.exists() {
         let pem = std::fs::read_to_string(&pin)
             .with_context(|| format!("cannot read pinned cert {}", pin.display()))?;
-        Ok(crate::tls::https_agent(&pem, timeout)?)
+        let fp = crate::tls::pem_first_block(&pem, "CERTIFICATE")
+            .map(|der| crate::crypto::cert_fingerprint(&der))
+            .unwrap_or_default();
+        Ok((crate::tls::https_agent(&pem, timeout)?, fp))
     } else {
         // TOFU capture: handshake-only probe (no secrets sent), display the
         // fingerprint, pin it, THEN send the password.
@@ -371,22 +390,27 @@ fn pinned_agent(home: &Path, base: &str, timeout: Duration) -> anyhow::Result<ur
         let pem = crate::tls::der_to_pem(&der, "CERTIFICATE");
         std::fs::create_dir_all(home)?;
         write_secret_file(&pin, &pem)?;
-        Ok(crate::tls::https_agent(&pem, timeout)?)
+        Ok((crate::tls::https_agent(&pem, timeout)?, fp))
     }
+}
+
+/// Everything the v1.2 connect flow needs at the edge (r14: flags + env
+/// twins, grouped so the signature stays reviewable).
+struct ConnectOpts<'a> {
+    url: Option<&'a str>,
+    device: Option<&'a str>,
+    name: Option<&'a str>,
+    password_file: Option<&'a Path>,
+    expect_fp: Option<&'a str>,
+    timeout_secs: u64,
+    as_json: bool,
 }
 
 /// The v1.2 connect flow (master prompt §11 / ADR-0029): asks for exactly
 /// device id + session password, resolves the endpoint, TOFU-pins, logs in,
 /// saves the connection, spawns the background runtime, prints a receipt.
-fn connect(
-    home: &Path,
-    url: Option<&str>,
-    device_flag: Option<&str>,
-    name_flag: Option<&str>,
-    password_file: Option<&Path>,
-    timeout_secs: u64,
-    as_json: bool,
-) -> anyhow::Result<i32> {
+fn connect(home: &Path, o: ConnectOpts) -> anyhow::Result<i32> {
+    let ConnectOpts { url, device: device_flag, name: name_flag, password_file, expect_fp, timeout_secs, as_json } = o;
     let saved = read_conn(home);
     let timeout = Duration::from_secs(timeout_secs.max(1));
 
@@ -422,7 +446,7 @@ fn connect(
     // Already connected to the SAME live session? Idempotent receipt (§41 spirit).
     if let Some(c) = saved.as_ref() {
         if c.device_id == device_id {
-            if let Ok(agent) = pinned_agent(home, &c.base, Duration::from_secs(3)) {
+            if let Ok((agent, _)) = pinned_agent(home, &c.base, Duration::from_secs(3)) {
                 let ctx = Ctx { agent, base: c.base.clone(), token: c.key.clone(), device: c.device_id.clone(), raw: false };
                 if let Ok((200, _)) = call(&ctx, "GET", "/v1/ping", None, None) {
                     let pid = runtime_pid(home);
@@ -453,7 +477,23 @@ fn connect(
 
     // ---- endpoint ladder + TOFU ----
     let base = resolve_base(url, &device_id, saved.as_ref())?;
-    let agent = pinned_agent(home, &base, timeout)?;
+    let pin_existed = home.join("cert.pem").exists();
+    let (agent, fp) = pinned_agent(home, &base, timeout)?;
+
+    // Strict TOFU (ADR-0029): the expectation must match BEFORE the password
+    // is sent. A mismatch removes a just-captured pin so an attacker's cert
+    // can never become the trusted one by surviving this refusal.
+    if let Some(want) = expect_fp.map(str::trim).filter(|s| !s.is_empty()) {
+        if fp != want {
+            if !pin_existed {
+                let _ = std::fs::remove_file(home.join("cert.pem"));
+            }
+            eprintln!("✗ FINGERPRINT MISMATCH — expected {want}, daemon presented {fp}");
+            eprintln!("  the session password was NOT sent; verify out-of-band ('frtrol fingerprint' on the owner machine)");
+            return Ok(3);
+        }
+        println!("✓ fingerprint matches --expect-fp ({want}) — logging in over the pinned cert");
+    }
 
     // ---- login: password → session key (ADR-0028) ----
     let resp = agent
@@ -525,6 +565,18 @@ fn backoff_secs(attempt: u32) -> u64 {
 
 fn heartbeat_secs() -> u64 {
     if crate::policy::test_mode() { 1 } else { 15 }
+}
+
+/// Sleep that a SIGTERM can interrupt: the runtime must react to `frtrol agent
+/// stop` within milliseconds, not after the current backoff nap (browser-test
+/// finding: a 60 s backoff delayed the stop by up to a minute).
+fn term_aware_sleep(total: Duration) {
+    let step = Duration::from_millis(200);
+    let mut slept = Duration::ZERO;
+    while slept < total && !TERM.load(std::sync::atomic::Ordering::SeqCst) {
+        std::thread::sleep(step.min(total - slept));
+        slept += step;
+    }
 }
 
 /// Spawn the detached runtime (ADR-0030 §decision): own process group
@@ -612,13 +664,24 @@ fn stop_runtime(home: &Path, as_json: bool) -> anyhow::Result<i32> {
 }
 
 fn stop_pid(pid: u32) -> bool {
-    // SIGTERM; wait up to 5 s for a clean exit (the handler clears creds).
+    // SIGTERM; wait up to 5 s for a clean exit (the handler clears creds);
+    // escalate to SIGKILL so a stuck runtime can never block a reconnect
+    // (browser-test finding: the old runtime outlived the new spawn).
     unsafe {
         if libc::kill(pid as i32, libc::SIGTERM) != 0 {
             return false;
         }
     }
     for _ in 0..50 {
+        if !pid_alive(pid) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    unsafe {
+        libc::kill(pid as i32, libc::SIGKILL);
+    }
+    for _ in 0..20 {
         if !pid_alive(pid) {
             return true;
         }
@@ -700,7 +763,7 @@ pub fn agentd_main() -> anyhow::Result<i32> {
         libc::signal(libc::SIGTERM, handle_term as *const () as usize);
     }
 
-    let agent = pinned_agent(&home, &conn.base, Duration::from_secs(10))?;
+    let (agent, _) = pinned_agent(&home, &conn.base, Duration::from_secs(10))?;
     let ctx = Ctx { agent, base: conn.base.clone(), token: conn.key.clone(), device: conn.device_id.clone(), raw: false };
     let mut attempt: u32 = 0;
     let status = |state: &str, last_ok: Option<i64>, last_error: Option<String>| {
@@ -737,7 +800,7 @@ pub fn agentd_main() -> anyhow::Result<i32> {
                     }
                 }
                 status("connected", Some(state::now()), None);
-                std::thread::sleep(Duration::from_secs(heartbeat_secs()));
+                term_aware_sleep(Duration::from_secs(heartbeat_secs()));
             }
             Ok((code, body)) => {
                 // a definitive rejection means OUR credentials are dead
@@ -751,14 +814,14 @@ pub fn agentd_main() -> anyhow::Result<i32> {
                 // 429 rate_limited / 5xx: transient — back off and retry
                 let err = format!("http {code}: {}", err_code(&body));
                 status("reconnecting", None, Some(err));
-                std::thread::sleep(Duration::from_secs(backoff_secs(attempt)));
+                term_aware_sleep(Duration::from_secs(backoff_secs(attempt)));
                 attempt += 1;
             }
             Err(e) => {
                 // network down: retry forever with backoff (§20 — a temporary
                 // failure must not destroy the logical session)
                 status("reconnecting", None, Some(e.clone()));
-                std::thread::sleep(Duration::from_secs(backoff_secs(attempt)));
+                term_aware_sleep(Duration::from_secs(backoff_secs(attempt)));
                 attempt += 1;
             }
         }
@@ -782,6 +845,9 @@ pub struct AgentArgs {
     pub device: Option<String>,
     pub name: Option<String>,
     pub password_file: Option<PathBuf>,
+    /// Strict TOFU (ADR-0029): abort before the password unless the daemon
+    /// fingerprint is exactly this (SHA256:…).
+    pub expect_fp: Option<String>,
     pub timeout_secs: u64,
     pub raw: bool,
     /// --json / FARCONTROL_JSON: machine-readable receipts (ADR-0026).
@@ -789,10 +855,18 @@ pub struct AgentArgs {
 }
 
 pub fn run(home: &Path, args: AgentArgs, cmd: Option<crate::AgentCmd>) -> anyhow::Result<i32> {
-    let AgentArgs { url, device, name, password_file, timeout_secs, raw, json } = args;
+    let AgentArgs { url, device, name, password_file, expect_fp, timeout_secs, raw, json } = args;
     // bare `frtrol agent` = the connect flow (ADR-0029)
     let Some(cmd) = cmd else {
-        return connect(home, url.as_deref(), device.as_deref(), name.as_deref(), password_file.as_deref(), timeout_secs, json);
+        return connect(home, ConnectOpts {
+            url: url.as_deref(),
+            device: device.as_deref(),
+            name: name.as_deref(),
+            password_file: password_file.as_deref(),
+            expect_fp: expect_fp.as_deref(),
+            timeout_secs,
+            as_json: json,
+        });
     };
     match cmd {
         crate::AgentCmd::Stop => stop_runtime(home, json),
@@ -806,12 +880,12 @@ pub fn run(home: &Path, args: AgentArgs, cmd: Option<crate::AgentCmd>) -> anyhow
             } else {
                 anyhow::bail!("'{id}' does not look like a request id (req_...) or session id (ses_...)")
             };
-            let (c, b) = call(&conn, "GET", "/v1/session/status", Some(&query), None).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(&conn, "GET", "/v1/session/status", Some(&query), None);
             emit(&conn, c, b)
         }
         crate::AgentCmd::Ping => {
             let conn = load_conn_ctx(home, timeout_secs, raw)?;
-            let (c, b) = call(&conn, "GET", "/v1/ping", None, None).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(&conn, "GET", "/v1/ping", None, None);
             emit(&conn, c, b)
         }
         other => {
@@ -835,7 +909,7 @@ fn load_conn_ctx(home: &Path, timeout_secs: u64, raw: bool) -> anyhow::Result<Ct
     let Some(conn) = conn else {
         anyhow::bail!("no saved connection — run 'frtrol agent' (device id + session password) on this machine first");
     };
-    let agent = pinned_agent(home, &conn.base, Duration::from_secs(timeout_secs.max(1)))?;
+    let (agent, _) = pinned_agent(home, &conn.base, Duration::from_secs(timeout_secs.max(1)))?;
     Ok(Ctx { agent, base: conn.base, token: conn.key, device: conn.device_id, raw })
 }
 
@@ -861,8 +935,7 @@ fn cmd_exec(ctx: &Ctx, cmd: crate::AgentCmd) -> anyhow::Result<i32> {
             if let Ok(m) = std::env::var("FAR_AGENT_MODEL") {
                 body["model"] = json!(m);
             }
-            let (c, b) = call(ctx, "POST", "/v1/session/request", None, Some(&body.to_string()))
-                .map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/session/request", None, Some(&body.to_string()));
             let rc = emit(ctx, c, b.clone())?;
             if rc == 0 {
                 if let Ok(v) = serde_json::from_str::<Value>(&b) {
@@ -883,12 +956,12 @@ fn cmd_exec(ctx: &Ctx, cmd: crate::AgentCmd) -> anyhow::Result<i32> {
                 "args": &command[1..],
                 "timeout_ms": timeout_ms,
             });
-            let (c, b) = call(ctx, "POST", "/v1/exec", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/exec", None, Some(&body.to_string()));
             emit_exec(ctx, c, b)
         }
         crate::AgentCmd::Read { session, path } => {
             let body = json!({ "session_id": session, "path": path });
-            let (c, b) = call(ctx, "POST", "/v1/file/read", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/file/read", None, Some(&body.to_string()));
             emit_read(ctx, c, b)
         }
         crate::AgentCmd::Write { session, path, content, b64 } => {
@@ -908,22 +981,22 @@ fn cmd_exec(ctx: &Ctx, cmd: crate::AgentCmd) -> anyhow::Result<i32> {
                 }
             };
             let body = json!({ "session_id": session, "path": path, "content_b64": content_b64 });
-            let (c, b) = call(ctx, "POST", "/v1/file/write", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/file/write", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::Ls { session, path } => {
             let body = json!({ "session_id": session, "path": path });
-            let (c, b) = call(ctx, "POST", "/v1/file/list", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/file/list", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::Ps { session } => {
             let body = json!({ "session_id": session });
-            let (c, b) = call(ctx, "POST", "/v1/process/list", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/process/list", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::Kill { session, pid, force } => {
             let body = json!({ "session_id": session, "pid": pid, "force": force });
-            let (c, b) = call(ctx, "POST", "/v1/process/kill", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/process/kill", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::App { session, command } => {
@@ -931,12 +1004,12 @@ fn cmd_exec(ctx: &Ctx, cmd: crate::AgentCmd) -> anyhow::Result<i32> {
                 anyhow::bail!("no command given — usage: frtrol agent app <session-id> <command...>");
             }
             let body = json!({ "session_id": session, "command": command[0], "args": &command[1..] });
-            let (c, b) = call(ctx, "POST", "/v1/app/launch", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/app/launch", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::Shot { session } => {
             let body = json!({ "session_id": session });
-            let (c, b) = call(ctx, "POST", "/v1/desktop/screenshot", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/desktop/screenshot", None, Some(&body.to_string()));
             if ctx.raw {
                 // --raw: dump the PNG bytes to stdout (file-friendly)
                 let v: Value = serde_json::from_str(&b).unwrap_or(Value::Null);
@@ -956,12 +1029,12 @@ fn cmd_exec(ctx: &Ctx, cmd: crate::AgentCmd) -> anyhow::Result<i32> {
                 anyhow::bail!("no text given — usage: frtrol agent type <session-id> <text...>");
             }
             let body = json!({ "session_id": session, "text": text.join(" ") });
-            let (c, b) = call(ctx, "POST", "/v1/desktop/input", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/desktop/input", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::Revoke { session } => {
             let body = json!({ "session_id": session });
-            let (c, b) = call(ctx, "POST", "/v1/session/revoke", None, Some(&body.to_string())).map_err(anyhow::Error::msg)?;
+            let (c, b) = call_net(ctx, "POST", "/v1/session/revoke", None, Some(&body.to_string()));
             emit(ctx, c, b)
         }
         crate::AgentCmd::Term { session, command } => {
@@ -980,8 +1053,7 @@ fn term_interactive(ctx: &Ctx, session: &str, command: Vec<String>) -> anyhow::R
     use std::io::{BufRead, Write};
 
     let body = json!({ "session_id": session, "command": command[0], "args": &command[1..] });
-    let (c, b) = call(ctx, "POST", "/v1/term/open", None, Some(&body.to_string()))
-        .map_err(anyhow::Error::msg)?;
+    let (c, b) = call_net(ctx, "POST", "/v1/term/open", None, Some(&body.to_string()));
     if !(200..300).contains(&c) {
         eprintln!("{b}");
         return Ok(err_exit(&b));
