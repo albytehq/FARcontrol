@@ -100,3 +100,28 @@ D-049  Research 5x sebelum implement (R1 enterprise CLI, R2 rust crates, R3 web 
        Approved by: owner (2026-10-02, chat: "disarankan buat research 5x buat cli dan UI web. no subagent allowed")
        Source: docs/research/          Reversal cost: none
 ```
+```
+D-050  v1.2 session model: kredensial EFEMERAL per `frtrol start` (Session Password + Session Key + Admin Token dirotasi tiap start; Device ID stabil = mesin; login tak merotasi key = multi-agent satu kredensial sesi, ala Wi-Fi password)
+       Approved by: owner (2026-10-03, v1.2.0 master engineering prompt §1–§10/§19 + chat: "lanjut ke ADR dan jalankan mission project 1.2.0")
+       Source: ADR-0028                 Reversal cost: high (auth/session protocol)
+```
+```
+D-051  Agent connect = Device ID + Session Password saja; endpoint ladder (override → host tersimpan di connection.json → localhost probe); fallback lintas-jaringan via --url/FARCONTROL_URL didokumentasi jujur — TIDAK dibangun relay/cloud/DHT/mDNS (untestable di sandbox = liability)
+       Approved by: owner (2026-10-03, master prompt §11–§15/§47 — arsitektur didelegasikan ke agent)
+       Source: ADR-0029                 Reversal cost: medium
+```
+```
+D-052  Agent runtime = detached supervised child `frtrol agentd` (process group sendiri, single-instance pidfile, heartbeat 15s, backoff exp+jitter cap 60s, state terminal menghapus kredensial); operasi tetap direct-to-daemon, runtime = layer liveness bukan proxy
+       Approved by: owner (2026-10-03, master prompt §17 "hard requirement" + §18)
+       Source: ADR-0030                 Reversal cost: medium
+```
+```
+D-053  CLI v1.2: start = session box (r6), STOP baru, status/list versi sesi; DIHAPUS `device …`, `agent login`, flag --token legacy (breaking, didokumentasi); migrasi v1.1/v1.0 → semua device row lama locked + key dirotasi + sesinya direvoke (audit device.model_migrated)
+       Approved by: owner (2026-10-03, master prompt §7–§8/§30/§33–§34)
+       Source: ADR-0031                 Reversal cost: medium (surface publik CLI)
+```
+```
+D-054  Console v1.2 = session-first IA (header: device id + agen live + PANIC persisten; tab Activity/Audit/Advanced; panel Devices dihapus), polling 3s (SSE defer, r11), Host-header allowlist admin plane (anti DNS-rebinding, r12), perbaikan kontras badge #CFE0FF + a11y (r15)
+       Approved by: owner (2026-10-03, master prompt §9–§10/§28/§32)
+       Source: ADR-0032                 Reversal cost: low (presentation layer)
+```

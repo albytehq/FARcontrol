@@ -2,6 +2,28 @@
 
 The single source of truth for status. **Update only with evidence.**
 
+> **2026-10-03 — v1.2.0 IN PROGRESS (ADRs 0028–0032 ACCEPTED, D-050…D-054; ephemeral session model + agent connect + background runtime + console v1.2). Rows below updated with evidence as work lands.**
+
+## v1.2.0 work items (master prompt §1–§51)
+
+| ID | Work item (source §) | Status | Evidence |
+|---|---|---|---|
+| V12-01 | ADRs 0028–0032 + DECISIONS D-050…D-054 written | VERIFIED | docs/adr/0028…0032, DECISIONS.md §B |
+| V12-02 | Migration v5: machine device, legacy rows locked + keys rotated + grants revoked, audit trail (ADR-0028/0031 §5) | TODO | |
+| V12-03 | `frtrol start` mints ephemeral credentials (password+key+admin token rotate every start), session box banner (ADR-0028, r6) | TODO | |
+| V12-04 | Login v1.2: password → session key, no key rotation on login, agent_name recorded (ADR-0028) | TODO | |
+| V12-05 | Old credentials rejected after restart (password + key) (master prompt §6) | TODO | |
+| V12-06 | Bare `frtrol agent` connect flow: prompts (hidden pw), endpoint ladder, TOFU, connection.json (ADR-0029) | TODO | |
+| V12-07 | `frtrol agentd` background runtime: survives CLI exit, heartbeat 15s, backoff cap 60s, terminal states clear creds (ADR-0030, §17 HARD REQ) | TODO | |
+| V12-08 | `frtrol agent status/stop` + runtime state machine (ADR-0030) | TODO | |
+| V12-09 | `frtrol stop` + admin shutdown endpoint (ADR-0031) | TODO | |
+| V12-10 | CLI surface: remove device cmds / agent login / --token; quick guide v1.2 (ADR-0031) | TODO | |
+| V12-11 | Console v1.2: session header, agents chips, tabs, PANIC persistent (r10) | TODO | |
+| V12-12 | Host-header allowlist admin plane (r12, DNS rebinding) | TODO | |
+| V12-13 | Badge contrast #CFE0FF + a11y fixes (r15) | TODO | |
+| V12-14 | e2e v1.2: session lifecycle, runtime survival, reconnect/expiry, allowlist, canary, v1.1 migration + ≥3 mutation checks | TODO | |
+| V12-15 | Docs: README flow, CHANGELOG 1.2.0, AGENTS.md, version bump | TODO | |
+
 > **2026-10-02 — v1.1.0 DELIVERED & VERIFIED (104 unit + 231 e2e + 9 mutation checks, clippy 0, cargo-audit 0 CVE, secret-scan CLEAN, SBOM 239 crates, browser-tested console v2 + VLM review 8/10 — device authentication (ADR-0025: FAR-XXXX-XXXX + Argon2 password, fingerprint TOFU, legacy migration), CLI v2 gh-style (ADR-0026), web console v2 total redesign (ADR-0027); 5 research notes; bug nyata ditemukan & difix: 6 deadlock + unthrottled rejection path + doctor v1.1 + backup/restore keyring map).**
 > **2026-10-02 — v1.0.0 RELEASED & VERIFIED (78 unit + 172 e2e, clippy 0, 6 mutation checks total, GPG-signed artifacts — stress-panic §97-14 + assurance rows closed-by-verification; ADR-0024).**
 > **2026-10-02 — v0.9.0 DELIVERED & VERIFIED (78 unit + 161 e2e, clippy 0, 3 mutation checks — progressive auth backoff SC-01 + startup config validation SC-02 + OS keyring ID-04; D-044/ADR-0023).**
