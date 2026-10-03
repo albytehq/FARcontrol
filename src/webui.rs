@@ -42,13 +42,8 @@ pub fn routes() -> Router<Shared> {
         .route("/ui/deny", axum::routing::post(ui_deny))
         .route("/ui/revoke", axum::routing::post(ui_revoke))
         .route("/ui/panic", axum::routing::post(ui_panic))
-        // v1.1 (ADR-0027 §4): device panel — same state-layer functions as the
-        // admin API + CLI, authenticated by the UI cookie + CSRF header.
-        .route("/ui/device/add", axum::routing::post(ui_device_add))
-        .route("/ui/device/lock", axum::routing::post(ui_device_lock))
-        .route("/ui/device/unlock", axum::routing::post(ui_device_unlock))
-        .route("/ui/device/passwd", axum::routing::post(ui_device_passwd))
-        .route("/ui/device/remove", axum::routing::post(ui_device_remove))
+        // v1.2 (ADR-0032): session stop from the console — same path as `frtrol stop`.
+        .route("/ui/stop", axum::routing::post(ui_stop))
 }
 
 // ============================================================
@@ -175,25 +170,17 @@ async fn ui_logout(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -
     Ok(Json(json!({ "ok": true, "bye": true })))
 }
 
-/// Everything the dashboard needs, in one poll (v1.1: + devices + chain status).
+/// Everything the dashboard needs, in one poll (v1.2: session-first — r10).
 async fn ui_state(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     verify_ui(&app, &headers, false)?;
-    let (pending, sessions, audit, devices, chain) = {
+    let (pending, sessions, audit, machine_id, chain) = {
         let conn = lock(&app);
-        let devices = state::device_list(&conn)
-            .iter()
-            .map(|d| {
-                let mut j = state::device_json(d);
-                j["active_sessions"] = json!(state::sessions_of_device(&conn, &d.id).len());
-                j
-            })
-            .collect::<Vec<_>>();
         let (checked, legacy, ok) = state::verify_audit_chain(&app.data_dir);
         (
             state::list_requests(&conn, Some("pending")),
             state::list_sessions(&conn),
             state::list_audit(&conn, 100),
-            devices,
+            state::machine_id(&conn),
             json!({ "checked": checked, "legacy": legacy, "ok": ok }),
         )
     };
@@ -206,6 +193,10 @@ async fn ui_state(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<
     Ok(Json(json!({
         "version": env!("CARGO_PKG_VERSION"),
         "server_time": state::now(),
+        "session_id": app.session_id,
+        "session_started_at": app.started_at,
+        "device_id": machine_id,
+        "agents": app.agents_json(),
         "tls": app.cfg.use_tls,
         "home_root": app.cfg.home_root,
         "fingerprint": fp,
@@ -218,7 +209,6 @@ async fn ui_state(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<
         },
         "pending": pending_json,
         "sessions": sessions_json,
-        "devices": devices,
         "audit": audit,
         "audit_chain": chain,
     })))
@@ -308,186 +298,51 @@ async fn ui_panic(State(app): State<Shared>, headers: HeaderMap, body: Bytes) ->
         state::panic_stop(&conn, &app.data_dir, &reason)?
     };
     let killed = app.terms.reap_inactive(&[]);
-    // v1.1 (ADR-0025 §5): panic rotates EVERY device key — mirrors admin_panic.
-    let rotated = {
+    // v1.2 (ADR-0028): panic rotates the WHOLE credential set — mirrors
+    // admin_panic. The new session password is shown ONCE in the console.
+    let password = crate::crypto::gen_password();
+    let admin_token = crate::crypto::gen_token();
+    let machine_id = {
         let conn = lock(&app);
-        let devs = state::device_list(&conn);
-        let mut n = 0usize;
-        for d in &devs {
-            let k = crate::crypto::gen_device_key();
-            if crate::server::persist_device_key_ui(&app, &conn, &d.id, &k).is_ok() {
-                n += 1;
-            }
+        let mid = state::machine_id(&conn);
+        let key = crate::crypto::gen_device_key();
+        let hash = crate::crypto::password_hash(&password).map_err(ApiError::from)?;
+        conn.execute(
+            "UPDATE devices SET password_hash = ?1, device_key = ?2, last_rotate = ?3 WHERE id = ?4",
+            rusqlite::params![hash, if app.keyring_mode { None } else { Some(key.clone()) }, state::now(), mid],
+        )
+        .map_err(ApiError::from)?;
+        if app.keyring_mode {
+            let mut map = std::collections::BTreeMap::new();
+            map.insert(mid.clone(), key);
+            crate::keyring::store(&app.data_dir, &state::serialize_key_payload(&map)).map_err(ApiError::from)?;
         }
-        n
+        state::set_meta(&conn, "admin_token", &admin_token).map_err(ApiError::from)?;
+        mid
     };
-    ui_audit(&app, "ui.panic", None, json!({ "revoked_sessions": revoked, "expired_pending": expired, "killed_terminals": killed, "rotated_device_keys": rotated }));
-    logline(&format!("PANIC via web UI — {revoked} revoked, {expired} pending expired, {killed} terminals killed, {rotated} device key(s) rotated"));
+    crate::server::write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    app.agents.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    ui_audit(&app, "ui.panic", None, json!({ "revoked_sessions": revoked, "expired_pending": expired, "killed_terminals": killed, "credentials_rotated": "password+key+admin_token" }));
+    logline(&format!("PANIC via web UI — {revoked} revoked, {expired} pending expired, {killed} terminals killed, credentials rotated"));
     Ok(Json(json!({
         "revoked_sessions": revoked,
         "expired_pending": expired,
         "killed_terminals": killed,
-        "rotated_device_keys": rotated,
-        "note": "every device key is dead — agents re-login with device id + password",
-    })))
-}
-
-// ============================================================
-// v1.1 (ADR-0027 §4): device panel handlers — UI cookie + CSRF, then the
-// SAME state-layer functions the CLI and admin API use (one code path).
-// ============================================================
-
-#[derive(Deserialize)]
-struct UiDeviceName {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct UiDeviceId {
-    id: String,
-}
-
-async fn ui_device_add(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    verify_ui(&app, &headers, true)?;
-    let b: UiDeviceName = parse_body(&body)?;
-    let password = crate::crypto::gen_password();
-    let key = crate::crypto::gen_device_key();
-    // NOTE: every DB use is scoped — ui_audit takes the lock itself (v1.1 fix:
-    // calling it while holding `conn` deadlocked the daemon).
-    let dev = {
-        let conn = lock(&app);
-        let row_key: &str = if app.keyring_mode { "" } else { key.as_str() };
-        let dev = state::device_create(&conn, &app.data_dir, b.name.trim(), Some(&password), row_key)
-            .map_err(|e| ApiError::bad_request("invalid_request", format!("{e}")))?;
-        if app.keyring_mode {
-            crate::server::persist_device_key_ui(&app, &conn, &dev.id, &key)?;
-        }
-        dev
-    };
-    ui_audit(&app, "ui.device.add", Some(&dev.id), json!({ "name": b.name }));
-    logline(&format!("DEVICE ADDED {} ({}) via web UI — password shown once in the console", dev.id, dev.name));
-    Ok(Json(json!({
-        "device_id": dev.id,
-        "name": dev.name,
         "password": password,
-        "fingerprint": std::fs::read_to_string(app.data_dir.join("cert.pem"))
-            .ok()
-            .and_then(|pem| crate::tls::pem_first_block(&pem, "CERTIFICATE"))
-            .map(|der| crate::crypto::cert_fingerprint(&der)),
-        "note": "the agent needs ONLY this device id + password — shown once"
+        "admin_token": admin_token,
+        "device_id": machine_id,
+        "note": "every credential is dead — this new session password is shown once",
     })))
 }
 
-async fn ui_device_lock(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
+/// v1.2 (ADR-0031): console-side session stop — same admin-plane path as
+/// `frtrol stop` (UI cookie + CSRF instead of the bearer token).
+async fn ui_stop(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     verify_ui(&app, &headers, true)?;
-    let b: UiDeviceId = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let key = crate::crypto::gen_device_key();
-    let revoked = {
-        let conn = lock(&app);
-        if state::device_get(&conn, &id).is_none() {
-            return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-        }
-        state::device_set_login(&conn, &app.data_dir, &id, false).map_err(ApiError::from)?;
-        crate::server::persist_device_key_ui(&app, &conn, &id, &key)?;
-        let mut revoked = Vec::new();
-        for sid in state::sessions_of_device(&conn, &id) {
-            state::revoke_session(&conn, &app.data_dir, &sid, "device locked (web console)", "owner:webui")?;
-            revoked.push(sid);
-        }
-        revoked
-    };
-    ui_audit(&app, "ui.device.lock", Some(&id), json!({ "revoked_sessions": revoked.len() }));
-    Ok(Json(json!({ "ok": true, "device_id": id, "revoked_sessions": revoked })))
-}
-
-async fn ui_device_unlock(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    verify_ui(&app, &headers, true)?;
-    let b: UiDeviceId = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    {
-        let conn = lock(&app);
-        if state::device_get(&conn, &id).is_none() {
-            return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-        }
-        state::device_set_login(&conn, &app.data_dir, &id, true).map_err(ApiError::from)?;
-    }
-    ui_audit(&app, "ui.device.unlock", Some(&id), json!({}));
-    Ok(Json(json!({ "ok": true, "device_id": id })))
-}
-
-async fn ui_device_passwd(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    verify_ui(&app, &headers, true)?;
-    let b: UiDeviceId = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let password = crate::crypto::gen_password();
-    let key = crate::crypto::gen_device_key();
-    {
-        let conn = lock(&app);
-        if state::device_get(&conn, &id).is_none() {
-            return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-        }
-        state::device_set_password(&conn, &app.data_dir, &id, &password, &key, "owner:webui")
-            .map_err(|e| ApiError::bad_request("login_disabled", format!("{e}")))?;
-        if app.keyring_mode {
-            crate::server::persist_device_key_ui(&app, &conn, &id, &key)?;
-        }
-    }
-    ui_audit(&app, "ui.device.passwd", Some(&id), json!({}));
-    logline(&format!("DEVICE PASSWD {id} via web UI — password + key rotated"));
-    Ok(Json(json!({
-        "device_id": id,
-        "password": password,
-        "note": "shown once — the device must re-login"
-    })))
-}
-
-async fn ui_device_remove(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    verify_ui(&app, &headers, true)?;
-    let b: UiDeviceId = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let revoked = {
-        let conn = lock(&app);
-        if state::device_get(&conn, &id).is_none() {
-            return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-        }
-        let mut revoked = Vec::new();
-        for sid in state::sessions_of_device(&conn, &id) {
-            state::revoke_session(&conn, &app.data_dir, &sid, "device removed (web console)", "owner:webui")?;
-            revoked.push(sid);
-        }
-        if app.keyring_mode {
-            if let Ok(Some(payload)) = crate::keyring::load(&app.data_dir) {
-                let mut map = state::parse_key_payload(&payload);
-                map.remove(&id);
-                crate::keyring::store(&app.data_dir, &state::serialize_key_payload(&map)).map_err(ApiError::from)?;
-            }
-        }
-        state::device_remove(&conn, &app.data_dir, &id).map_err(ApiError::from)?;
-        revoked
-    };
-    ui_audit(&app, "ui.device.remove", Some(&id), json!({ "revoked_sessions": revoked.len() }));
-    Ok(Json(json!({ "ok": true, "device_id": id, "revoked_sessions": revoked })))
+    ui_audit(&app, "ui.stop", None, json!({ "session_id": app.session_id }));
+    logline("shutdown requested via web UI — ending session");
+    app.shutdown.notify_waiters();
+    Ok(Json(json!({ "ok": true, "note": "session ending — this page will stop responding" })))
 }
 
 // ============================================================
@@ -507,6 +362,9 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         Arc::new(App {
             db: Mutex::new(conn),
+            session_id: "ses_webui_test".into(),
+            agents: Mutex::new(std::collections::HashMap::new()),
+            shutdown: tokio::sync::Notify::new(),
             terms: crate::term::Terms::default(),
             auth_fails: Mutex::new(Vec::new()),
             auth_locks: Mutex::new(std::collections::HashMap::new()),

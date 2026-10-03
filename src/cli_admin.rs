@@ -62,9 +62,8 @@ pub fn init_quiet(data_dir: &Path) -> anyhow::Result<bool> {
     }
 
     let conn = state::open_db(&data_dir.join("state.db"))?;
-    // v1.1 (ADR-0025): fresh installs create NO agent token — the owner
-    // registers a device (`frtrol device add`) and hands the agent only
-    // the device id + password. Legacy tokens migrate at daemon start.
+    // v1.2 (ADR-0028): fresh installs need NO device registration — `frtrol
+    // start` mints the machine device + a session password on every run.
     let admin_token = crypto::gen_token();
     if keyring_mode {
         // ID-04 (ADR-0023): device keys live in the kernel keyring only —
@@ -86,13 +85,8 @@ pub fn init_quiet(data_dir: &Path) -> anyhow::Result<bool> {
 
     println!("initialized {} (first run)", data_dir.display());
     println!();
-    println!("next step — register a device for your AI agent:");
-    println!("  frtrol device add <name>");
-    println!("  → prints a device id (FAR-XXXX-XXXX) + password (shown once)");
-    println!("  → the agent logs in with just those two: frtrol agent login <device-id>");
-    println!();
-    println!("admin token (web console login — stored in admin-token, mode 0600):");
-    println!("  {admin_token}");
+    println!("next step — start a session (it prints everything you need):");
+    println!("  frtrol start");
     println!();
     Ok(true)
 }
@@ -186,30 +180,52 @@ fn iso(ts: i64) -> String {
 pub fn status(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     let v = a.get("/admin/ping")?;
-    let devs = a.get("/admin/devices")?;
     if as_json {
         // §45 (CL-02) + ADR-0026: stable machine output, one line, additive schema.
-        println!("{}", serde_json::to_string(&json!({
-            "service": "farcontrol",
-            "version": v["version"],
-            "daemon": true,
-            "pending_count": v["pending_count"],
-            "active_count": v["active_count"],
-            "devices": devs["count"],
-            "uptime_secs": v["uptime_secs"],
-        }))?);
+        println!("{}", serde_json::to_string(&v)?);
         return Ok(());
     }
-    crate::out::section(&format!("FARcontrol {} — daemon up", v["version"].as_str().unwrap_or("?")));
+    crate::out::section(&format!("FARcontrol {} — session up", v["version"].as_str().unwrap_or("?")));
     let uptime = v["uptime_secs"].as_i64().unwrap_or(0);
-    crate::out::dim(&format!("{} up, {} pending · {} active session(s) · {} device(s)",
+    let agents = v["agents"].as_array().cloned().unwrap_or_default();
+    crate::out::dim(&format!(
+        "device {} · {} up · {} pending · {} active session(s)",
+        v["device_id"].as_str().unwrap_or("?"),
         crate::out::humanize(uptime),
         v["pending_count"].as_i64().unwrap_or(0),
         v["active_count"].as_i64().unwrap_or(0),
-        devs["count"].as_i64().unwrap_or(0),
     ));
-    crate::out::hint("frtrol list shows every pending request and session");
+    if agents.is_empty() {
+        crate::out::empty("no agent connected — it runs 'frtrol agent' (device id + session password)");
+    } else {
+        for ag in &agents {
+            let state = if ag["connected"].as_bool().unwrap_or(false) { "connected" } else { "silent" };
+            crate::out::dim(&format!(
+                "  agent {} — {state}, last seen {}",
+                ag["name"].as_str().unwrap_or("?"),
+                crate::out::ago(ag["last_seen"].as_i64()),
+            ));
+        }
+    }
+    crate::out::hint("frtrol list shows every pending request and session · frtrol stop ends the session");
     Ok(())
+}
+
+/// v1.2 (ADR-0031): `frtrol stop` — graceful session end. The daemon exits,
+/// in-memory state dies, the next start mints fresh credentials.
+pub fn stop(data_dir: &Path) -> anyhow::Result<()> {
+    let a = admin(data_dir)?;
+    a.post("/admin/shutdown", &json!({}))?;
+    // Wait for the daemon to actually let go of the ports (bounded).
+    for _ in 0..50 {
+        if a.get("/admin/ping").is_err() {
+            crate::out::ok_receipt("session stopped — every credential from this run is dead");
+            crate::out::hint("start again any time: frtrol start (new session password + admin token)");
+            return Ok(());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    anyhow::bail!("shutdown was accepted but the daemon is still answering — try again or check its terminal");
 }
 
 pub fn list(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
@@ -242,11 +258,10 @@ pub fn list(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
                     format!("{:.1}h", r["requested_hours"].as_f64().unwrap_or(0.0)),
                     crate::out::ago(r["created_at"].as_i64()),
                     crate::out::trunc(r["reason"].as_str().unwrap_or(""), 30),
-                    r["device_id"].as_str().unwrap_or("legacy").into(),
                 ]
             })
             .collect();
-        println!("{}", crate::out::table(&["ID", "AGENT", "SCOPE", "ASKED", "WAITING", "REASON", "DEVICE"], &rows));
+        println!("{}", crate::out::table(&["ID", "AGENT", "SCOPE", "ASKED", "WAITING", "REASON"], &rows));
         let first_id = pending[0]["id"].as_str().unwrap_or("?");
         crate::out::hint(&format!("frtrol approve {first_id} — optional hours shortens it · frtrol deny {first_id}"));
     }
@@ -283,12 +298,11 @@ pub fn list(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
                     agent_cell,
                     s["scope"].as_str().unwrap_or("?").into(),
                     dot,
-                    s["device_id"].as_str().unwrap_or("legacy").into(),
                     iso(s["expires_at"].as_i64().unwrap_or(0)),
                 ]
             })
             .collect();
-        println!("{}", crate::out::table(&["ID", "AGENT", "SCOPE", "STATE", "DEVICE", "EXPIRES"], &rows));
+        println!("{}", crate::out::table(&["ID", "AGENT", "SCOPE", "STATE", "EXPIRES"], &rows));
         for s in &sessions {
             if s["effective_status"] == "active" {
                 crate::out::hint(&format!("frtrol revoke {} — access dies immediately", s["id"].as_str().unwrap_or("?")));
@@ -311,8 +325,7 @@ pub fn approve(data_dir: &Path, id: &str, hours: Option<f64>) -> anyhow::Result<
     let scope = s["scope"].as_str().unwrap_or("?");
     // session payloads carry expires_at (authoritative) — derive the duration
     let left = s["expires_at"].as_i64().unwrap_or(0) - state::now();
-    let dev = s["device_id"].as_str().unwrap_or("legacy");
-    crate::out::ok_receipt(&format!("approved {id} → {sid} ({}, {scope}, device {dev})", crate::out::humanize(left.max(0))));
+    crate::out::ok_receipt(&format!("approved {id} → {sid} ({}, {scope})", crate::out::humanize(left.max(0))));
     crate::out::hint(&format!("agent runs commands: frtrol agent exec {sid} <command>"));
     Ok(())
 }
@@ -334,104 +347,13 @@ pub fn revoke(data_dir: &Path, id: &str, reason: &str) -> anyhow::Result<()> {
 pub fn rotate(data_dir: &Path) -> anyhow::Result<()> {
     let a = admin(data_dir)?;
     let v = a.post("/admin/rotate", &json!({}))?;
-    println!("NEW legacy-device key (old one is dead — update the v1.0 agent NOW):");
-    println!("  {}", v["agent_token"].as_str().unwrap_or("?"));
-    Ok(())
-}
-
-// ============================================================
-// v1.1 (ADR-0025 §5): device management — via the admin plane like every
-// other owner decision (ADR-0006: the CLI never opens the DB directly).
-// ============================================================
-
-pub fn device_add(data_dir: &Path, name: &str) -> anyhow::Result<()> {
-    let a = admin(data_dir)?;
-    let v = a.post("/admin/devices/add", &json!({ "name": name }))?;
-    let id = v["device_id"].as_str().unwrap_or("?");
-    let password = v["password"].as_str().unwrap_or("?");
-    println!("✓ device created — {id} \"{name}\"");
+    println!("✓ session credentials rotated — the old session password is dead (connected agents keep working)");
     println!();
-    println!("DEVICE PASSWORD (shown once — store it now):");
-    println!("  {password}");
-    println!();
-    println!("The agent needs ONLY two things:");
-    println!("  device id : {id}");
-    println!("  password  : (the line above)");
-    println!();
-    println!("Agent onboarding (on the agent machine):");
-    println!("  frtrol agent login {id}        # password prompted, or FARCONTROL_PASSWORD=… ");
-    Ok(())
-}
-
-pub fn device_list(data_dir: &Path, as_json: bool) -> anyhow::Result<()> {
-    let a = admin(data_dir)?;
-    let v = a.get("/admin/devices")?;
-    if as_json {
-        println!("{}", serde_json::to_string(&v)?);
-        return Ok(());
-    }
-    let devices = v["devices"].as_array().cloned().unwrap_or_default();
-    crate::out::section("Devices");
-    if devices.is_empty() {
-        crate::out::empty("no devices registered — add one: frtrol device add <name>");
-        return Ok(());
-    }
-    let rows: Vec<Vec<String>> = devices
-        .iter()
-        .map(|d| {
-            let status = if d["key_only"].as_bool().unwrap_or(false) {
-                format!("{} key-only", crate::out::dot(crate::out::Dot::Dead))
-            } else if d["login_enabled"].as_bool().unwrap_or(false) {
-                crate::out::dot(crate::out::Dot::Active)
-            } else {
-                crate::out::dot(crate::out::Dot::Locked)
-            };
-            vec![
-                d["id"].as_str().unwrap_or("?").into(),
-                crate::out::trunc(d["name"].as_str().unwrap_or("?"), 18),
-                status,
-                crate::out::ago(d["last_seen"].as_i64()),
-                d["active_sessions"].as_i64().unwrap_or(0).to_string(),
-            ]
-        })
-        .collect();
-    println!("{}", crate::out::table(&["ID", "NAME", "STATUS", "LAST SEEN", "SESSIONS"], &rows));
-    crate::out::hint("frtrol device passwd <id> rotates its password · lock/unlock gates its login");
-    Ok(())
-}
-
-pub fn device_lock(data_dir: &Path, id: &str) -> anyhow::Result<()> {
-    let a = admin(data_dir)?;
-    let v = a.post("/admin/devices/lock", &json!({ "id": id }))?;
-    let n = v["revoked_sessions"].as_array().map(|s| s.len()).unwrap_or(0);
-    println!("✓ device {id} LOCKED — login disabled, key rotated, {n} session(s) revoked");
-    Ok(())
-}
-
-pub fn device_unlock(data_dir: &Path, id: &str) -> anyhow::Result<()> {
-    let a = admin(data_dir)?;
-    a.post("/admin/devices/unlock", &json!({ "id": id }))?;
-    println!("✓ device {id} unlocked — login re-enabled (password unchanged)");
-    Ok(())
-}
-
-pub fn device_passwd(data_dir: &Path, id: &str) -> anyhow::Result<()> {
-    let a = admin(data_dir)?;
-    let v = a.post("/admin/devices/passwd", &json!({ "id": id }))?;
-    println!("✓ device {id} — password + key rotated (the old key is dead)");
-    println!();
-    println!("NEW DEVICE PASSWORD (shown once):");
+    println!("NEW SESSION PASSWORD (shown once):");
     println!("  {}", v["password"].as_str().unwrap_or("?"));
     println!();
-    println!("The device must re-login: frtrol agent login {id}");
-    Ok(())
-}
-
-pub fn device_remove(data_dir: &Path, id: &str) -> anyhow::Result<()> {
-    let a = admin(data_dir)?;
-    let v = a.post("/admin/devices/remove", &json!({ "id": id }))?;
-    let n = v["revoked_sessions"].as_array().map(|s| s.len()).unwrap_or(0);
-    println!("✗ device {id} removed — key destroyed, {n} session(s) revoked");
+    println!("NEW ADMIN TOKEN (web console — also written to admin-token, 0600):");
+    println!("  {}", v["admin_token"].as_str().unwrap_or("?"));
     Ok(())
 }
 
@@ -491,10 +413,12 @@ pub fn panic_stop(data_dir: &Path, reason: &str) -> anyhow::Result<()> {
     println!("  revoked sessions   : {}", v["revoked_sessions"].as_i64().unwrap_or(0));
     println!("  expired pending    : {}", v["expired_pending"].as_i64().unwrap_or(0));
     println!("  killed terminals   : {}", v["killed_terminals"].as_i64().unwrap_or(0));
-    println!("  device keys rotated: {}", v["rotated_device_keys"].as_i64().unwrap_or(0));
+    println!("  rotated            : session password + session key + admin token");
     println!();
-    println!("Every device key is dead — agents must re-login (device id + password).");
-    println!("Trust a device again: frtrol device passwd <FAR-XXXX-XXXX> → hand out the new password.");
+    println!("Every credential is dead. NEW SESSION PASSWORD (shown once):");
+    println!("  {}", v["password"].as_str().unwrap_or("?"));
+    println!();
+    println!("An agent reconnects with it whenever you are ready: frtrol agent");
     Ok(())
 }
 

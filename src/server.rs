@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -47,11 +47,89 @@ pub struct App {
     pub ui_sessions: crate::webui::UiSessions,
     /// v0.7 observability: daemon start time (uptime metric, §35/App B).
     pub started_at: i64,
+    /// v1.2 (ADR-0028): identifies THIS daemon run. Generated per start;
+    /// the agent stores it to detect "the session I connected to is gone".
+    pub session_id: String,
+    /// v1.2 (ADR-0030): live agent runtimes seen via /v1/heartbeat —
+    /// name → state. Display/liveness only; never authority.
+    pub agents: Mutex<std::collections::HashMap<String, AgentState>>,
+    /// v1.2 (ADR-0031): graceful shutdown channel — `frtrol stop` fires it.
+    pub shutdown: tokio::sync::Notify,
+}
+
+/// v1.2 (ADR-0030): liveness record for one connected agent runtime.
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentState {
+    pub name: String,
+    pub connected_at: i64,
+    pub last_seen: i64,
+}
+
+/// An agent counts as connected while its heartbeat is fresher than this
+/// (3 × the 15 s interval; test mode uses a 1 s interval so the window
+/// shrinks too). Stale entries are swept + audited once.
+pub const AGENT_STALE_SECS: i64 = 45;
+
+impl App {
+    /// Serializes the live agent map (newest first) with a derived `connected`
+    /// flag — feeds `frtrol status` and the console header (r10).
+    pub fn agents_json(&self) -> Vec<Value> {
+        let now = state::now();
+        let mut v: Vec<Value> = self
+            .agents
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .map(|a| {
+                json!({
+                    "name": a.name,
+                    "connected_at": a.connected_at,
+                    "last_seen": a.last_seen,
+                    "connected": now - a.last_seen < agent_stale_secs(),
+                })
+            })
+            .collect();
+        v.sort_by(|a, b| b["last_seen"].as_i64().cmp(&a["last_seen"].as_i64()));
+        v
+    }
+}
+
+fn agent_stale_secs() -> i64 {
+    if crate::policy::test_mode() { 3 } else { AGENT_STALE_SECS }
 }
 
 const MAX_TERMS: usize = 8;
 const RATE_WINDOW_SECS: i64 = 60;
 const RATE_MAX_FAILS: usize = 10;
+
+// ============================================================
+// v1.2 (ADR-0032 §4): Host-header allowlist for the admin plane.
+// A browser pointed at a rebindable name (evil.example → 127.0.0.1) still
+// sends Host: evil.example — reject anything that is not a loopback name.
+// The agent plane is unaffected (HMAC, no ambient cookies).
+// ============================================================
+pub fn host_allowed(host_header: &str) -> bool {
+    let h = host_header.trim().to_ascii_lowercase();
+    // strip the port (last colon, but not inside an IPv6 literal)
+    let name = if h.starts_with('[') {
+        h.split(']').next().unwrap_or(&h).to_string() + "]"
+    } else {
+        h.rsplit_once(':').map(|(n, _)| n.to_string()).unwrap_or(h)
+    };
+    matches!(name.as_str(), "127.0.0.1" | "localhost" | "[::1]" | "::1")
+}
+
+async fn host_guard(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req.headers().get(axum::http::header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
+    if !host_allowed(host) {
+        return ApiError::forbidden(
+            "bad_host",
+            format!("Host '{host}' is not allowed on the local admin plane (DNS-rebinding guard)"),
+        )
+        .into_response();
+    }
+    next.run(req).await
+}
 
 /// Progressive lockout state (SC-01, ADR-0023).
 #[derive(Default)]
@@ -116,7 +194,12 @@ fn is_root() -> bool {
 // Daemon entry
 // ============================================================
 
-pub async fn run(data_dir: &std::path::Path, bind_override: Option<String>, allow_root: bool) -> anyhow::Result<()> {
+pub async fn run(
+    data_dir: &std::path::Path,
+    bind_override: Option<String>,
+    allow_root: bool,
+    verbose: bool,
+) -> anyhow::Result<()> {
     let cfg_path = data_dir.join("config.toml");
     let mut cfg: Config = if cfg_path.exists() {
         toml::from_str(&std::fs::read_to_string(&cfg_path)?)?
@@ -142,52 +225,25 @@ pub async fn run(data_dir: &std::path::Path, bind_override: Option<String>, allo
     let keyring_mode = cfg.keyring_mode();
 
     let conn = state::open_db(&db_path)?;
-    // v1.1 (ADR-0025): v1.0 agent tokens migrate into the devices table on
-    // first start; fresh installs run with zero devices until `device add`.
-    {
-        use rusqlite::Connection;
-        fn migrate_devices(conn: &Connection, dir: &std::path::Path, keyring_mode: bool) -> anyhow::Result<()> {
-            state::migrate_legacy_token(conn, dir)?;
-            if keyring_mode {
-                if let Some(payload) = keyring::load(dir)? {
-                    let mut map = state::parse_key_payload(&payload);
-                    if let Some(token) = map.remove("legacy") {
-                        let leg_id = match state::legacy_device(conn) {
-                            Some(d) => d.id,
-                            None => state::device_create(conn, dir, "legacy", None, "")?.id,
-                        };
-                        map.entry(leg_id.clone()).or_insert(token);
-                        keyring::store(dir, &state::serialize_key_payload(&map))?;
-                        state::audit(conn, dir, "system", "device.legacy_migrated", Some(&leg_id), json!({ "note": "keyring bare token re-keyed under the legacy device id" }));
-                    }
-                }
-            }
-            Ok(())
-        }
-        migrate_devices(&conn, data_dir, keyring_mode)?;
+
+    // v1.2 (ADR-0028/0031 §5): the machine device + one-time migration of
+    // any v1.1 registry (legacy rows locked, keys rotated to noise, their
+    // grants revoked, everything audited).
+    let machine_id = state::machine_id(&conn);
+    state::migrate_session_model(&conn, data_dir, &machine_id)?;
+    // Secret-store mode must match how this data dir was initialized — a
+    // mismatch is a misconfiguration, not something to silently paper over.
+    let mode_meta = state::get_meta(&conn, "secret_store");
+    if keyring_mode && mode_meta.as_deref() == Some("file") {
+        anyhow::bail!(
+            "config_invalid: this data dir was initialized with secret_store=file, but config.toml says keyring — fix [identity] secret_store or re-init"
+        );
     }
-    // Credential presence checks — per-request loaders (file: devices table;
-    // keyring: kernel payload map) so rotation is effective instantly in both
-    // modes. A fresh install with zero devices is VALID (owner adds one later).
-    if keyring_mode {
-        let mode_meta = state::get_meta(&conn, "secret_store");
-        if mode_meta.as_deref() != Some("keyring") && state::legacy_device(&conn).is_none() && state::count_devices(&conn) == 0 && state::get_meta(&conn, "agent_token").is_some() {
-            anyhow::bail!(
-                "config_invalid: this data dir was initialized with secret_store=file, but config.toml says keyring — fix [identity] secret_store or re-init"
-            );
-        }
-        if keyring::load(data_dir)?.is_none() && state::count_devices(&conn) == 0 {
-            anyhow::bail!("device keys missing from the kernel keyring — run: frtrol init");
-        }
-    } else {
-        if state::get_meta(&conn, "secret_store").as_deref() == Some("keyring") && state::count_devices(&conn) == 0 {
-            anyhow::bail!(
-                "config_invalid: this data dir was initialized with secret_store=keyring, but config.toml says file — fix [identity] secret_store or re-init"
-            );
-        }
+    if !keyring_mode && mode_meta.as_deref() == Some("keyring") {
+        anyhow::bail!(
+            "config_invalid: this data dir was initialized with secret_store=keyring, but config.toml says file — fix [identity] secret_store or re-init"
+        );
     }
-    let admin_token = state::get_meta(&conn, "admin_token")
-        .ok_or_else(|| anyhow::anyhow!("admin_token missing from state — re-run frtrol init"))?;
 
     // Admin plane MUST be loopback (ADR-0004) — the approval path never touches the network.
     let admin_ip: IpAddr = cfg
@@ -237,12 +293,37 @@ pub async fn run(data_dir: &std::path::Path, bind_override: Option<String>, allo
     };
     let scheme = if use_tls { "https" } else { "http" };
 
+    // Single-session enforcement (master prompt §41): the ports are claimed
+    // BEFORE any credential is minted — a failed second start must never
+    // rotate the running session's on-disk credentials (smoke-found bug).
+    let admin_listener = TcpListener::bind(&cfg.admin_bind)
+        .await
+        .map_err(|_| anyhow::anyhow!("cannot bind admin {} — another frtrol session is already running (frtrol status / frtrol stop)", cfg.admin_bind))?;
+    let agent_listener = TcpListener::bind(&cfg.agent_bind)
+        .await
+        .map_err(|_| anyhow::anyhow!("cannot bind agent {} — another frtrol session is already running (frtrol status / frtrol stop)", cfg.agent_bind))?;
+
+    // v1.2 (ADR-0028 §1): mint THIS run's ephemeral credentials — only after
+    // this start has proven it owns the ports. Every credential from any
+    // previous run dies right here.
+    let creds = state::begin_daemon_session(&conn, data_dir, &machine_id, !keyring_mode)?;
+    if keyring_mode {
+        // the kernel payload becomes exactly {machine_id: key} — old keys
+        // (v1.1 registry, v1.0 token) are gone from the ring by construction.
+        let mut map = std::collections::BTreeMap::new();
+        map.insert(machine_id.clone(), creds.key.clone());
+        keyring::store(data_dir, &state::serialize_key_payload(&map))?;
+    }
+    write_secret(&data_dir.join("admin-token"), &creds.admin_token)?;
+    let first_start = state::get_meta(&conn, "v12_first_start").is_none();
+    state::set_meta(&conn, "v12_first_start", "1")?;
+
     let app: Shared = Arc::new(App {
         db: Mutex::new(conn),
         cfg,
         data_dir: data_dir.to_path_buf(),
         home_root,
-        admin_token,
+        admin_token: creds.admin_token.clone(),
         pol,
         terms: term::Terms::default(),
         auth_fails: Mutex::new(Vec::new()),
@@ -250,50 +331,58 @@ pub async fn run(data_dir: &std::path::Path, bind_override: Option<String>, allo
         keyring_mode,
         ui_sessions: webui::UiSessions::default(),
         started_at: state::now(),
+        session_id: crate::crypto::gen_id("ses"),
+        agents: Mutex::new(std::collections::HashMap::new()),
+        shutdown: tokio::sync::Notify::new(),
     });
 
-    let admin_listener = TcpListener::bind(&app.cfg.admin_bind)
-        .await
-        .map_err(|_| anyhow::anyhow!("cannot bind admin {} — is another frtrol daemon already running?", app.cfg.admin_bind))?;
-    let agent_listener = TcpListener::bind(&app.cfg.agent_bind)
-        .await
-        .map_err(|_| anyhow::anyhow!("cannot bind agent {} — port in use?", app.cfg.agent_bind))?;
-
+    // v1.2 (ADR-0028, research r6): the session box — everything the owner
+    // needs, nothing they don't. Operator detail lives behind --verbose.
     logline(&format!(
-        "FARcontrol {} daemon ready | pid {}",
+        "FARcontrol {} session started | pid {} | session {}",
         env!("CARGO_PKG_VERSION"),
-        std::process::id()
+        std::process::id(),
+        app.session_id
     ));
-    let n_devices = { state::count_devices(&lock(&app)) };
-    let n_legacy = state::legacy_device(&lock(&app)).is_some();
-    println!("  data dir  : {}", app.data_dir.display());
-    println!("  os/arch   : {} / {}", std::env::consts::OS, std::env::consts::ARCH);
-    println!("  agent API : {}://{}  (device login + HMAC + TLS, ADR-0025/0005/0004)", scheme, app.cfg.agent_bind);
-    println!("  admin API : {}://{}  (owner only, loopback)", scheme, app.cfg.admin_bind);
-    println!("  web UI    : {}://{}/  (owner console — login with the admin token, ADR-0017/0027)", scheme, app.cfg.admin_bind);
-    if use_tls {
-        let fp = std::fs::read_to_string(data_dir.join("cert.pem"))
-            .ok()
-            .and_then(|pem| crate::tls::pem_first_block(&pem, "CERTIFICATE"))
-            .map(|der| crate::crypto::cert_fingerprint(&der))
-            .unwrap_or_else(|| "unavailable".into());
-        println!("  fingerprint: {fp}   (SSH-style TOFU — verify out-of-band on agent login, ADR-0025 §4)");
+    println!("\nFARcontrol {} — session started{}", env!("CARGO_PKG_VERSION"), if first_start { "  (first run)" } else { "" });
+    println!("  device id        : {machine_id}");
+    println!("  session password : {}", creds.password);
+    println!("  web console      : {}://{}/   (login: admin token below)", scheme, app.cfg.admin_bind);
+    println!("  admin token      : {}", creds.admin_token);
+    println!();
+    println!("  hand those two lines to your AI agent's operator, then on the");
+    println!("  agent machine run:   frtrol agent");
+    println!();
+    println!("  everything above dies when this process stops (Ctrl-C, or:");
+    println!("  frtrol stop).  waiting for agent requests…\n");
+    if verbose {
+        println!("  ── operator detail (frtrol start --verbose) ──");
+        println!("  data dir   : {}", app.data_dir.display());
+        println!("  os/arch    : {} / {}", std::env::consts::OS, std::env::consts::ARCH);
+        println!("  session id : {}", app.session_id);
+        println!("  agent API  : {}://{}  (machine device + HMAC + TLS, ADR-0028/0005/0004)", scheme, app.cfg.agent_bind);
+        println!("  admin API  : {}://{}  (owner only, loopback + Host allowlist, ADR-0032)", scheme, app.cfg.admin_bind);
+        if use_tls {
+            let fp = std::fs::read_to_string(data_dir.join("cert.pem"))
+                .ok()
+                .and_then(|pem| crate::tls::pem_first_block(&pem, "CERTIFICATE"))
+                .map(|der| crate::crypto::cert_fingerprint(&der))
+                .unwrap_or_else(|| "unavailable".into());
+            println!("  fingerprint: {fp}   (SSH-style TOFU — compare with 'frtrol fingerprint')");
+        }
+        println!("  home root  : {}", app.home_root.display());
+        println!("  policy     : standard — session 5–72h, exec ≤300s, output 256KiB, files ≤1MiB under $HOME");
+        println!("  secret store: {}", if keyring_mode { "kernel keyring" } else { "state.db (0600 dir)" });
     }
-    println!("  home root : {}", app.home_root.display());
-    println!("  policy    : standard — session 5–72h, exec ≤300s, output 256KiB, files ≤1MiB under $HOME");
-    if n_devices == 0 {
-        println!("  devices   : none yet — register one:  frtrol device add <name>  →  give the device id + password to your AI agent");
-    } else {
-        println!("  devices   : {n_devices} registered{} — frtrol device list", if n_legacy { " (incl. legacy v1.0 key-only device)" } else { "" });
-    }
-    println!("  waiting for agent requests… (Ctrl-C to stop)");
 
     // Sweeper: expire due sessions + stale pending requests + old nonces
-    // (defense in depth on top of the lazy check in authorize_session).
+    // (defense in depth on top of the lazy check in authorize_session),
+    // + v1.2 silent-agent sweep (ADR-0030: heartbeat gone → audit once).
     {
         let app2 = app.clone();
         tokio::spawn(async move {
-            let mut tick = tokio::time::interval(std::time::Duration::from_secs(30));
+            let sweep_secs = if crate::policy::test_mode() { 1 } else { 30 };
+            let mut tick = tokio::time::interval(std::time::Duration::from_secs(sweep_secs));
             loop {
                 tick.tick().await;
                 let expired = {
@@ -319,8 +408,27 @@ pub async fn run(data_dir: &std::path::Path, bind_override: Option<String>, allo
                 if killed > 0 {
                     logline(&format!("{killed} terminal(s) killed — session no longer active"));
                 }
-                let conn = lock(&app2);
-                state::nonces_cleanup(&conn);
+                {
+                    let conn = lock(&app2);
+                    state::nonces_cleanup(&conn);
+                }
+                // v1.2 (ADR-0030): agents whose heartbeat went silent past the
+                // stale window are dropped + audited once (no per-sweep spam —
+                // removal from the map makes it exactly once).
+                let silent: Vec<AgentState> = {
+                    let mut agents = app2.agents.lock().unwrap_or_else(|e| e.into_inner());
+                    let cutoff = state::now() - agent_stale_secs();
+                    let silent: Vec<AgentState> = agents.values().filter(|a| a.last_seen < cutoff).cloned().collect();
+                    for a in &silent {
+                        agents.remove(&a.name);
+                    }
+                    silent
+                };
+                for a in silent {
+                    logline(&format!("agent '{}' went silent — no heartbeat", a.name));
+                    let conn = lock(&app2);
+                    state::audit(&conn, &app2.data_dir, &format!("agent:{}", a.name), "agent.timeout", None, json!({ "last_seen": a.last_seen }));
+                }
             }
         });
     }
@@ -331,9 +439,12 @@ pub async fn run(data_dir: &std::path::Path, bind_override: Option<String>, allo
     let agent_task = tokio::spawn(serve_plane(agent_listener, acceptor.clone(), agent_router));
     let admin_task = tokio::spawn(serve_plane(admin_listener, acceptor, admin_router));
 
-    // Block until Ctrl-C (or a server task dies).
+    // Block until Ctrl-C, `frtrol stop`, or a server task dies.
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
+        _ = app.shutdown.notified() => {
+            logline("shutdown requested by owner (frtrol stop) — session ends, all credentials die");
+        },
         _ = agent_task => {},
         _ = admin_task => {},
     }
@@ -364,6 +475,9 @@ pub(crate) fn build_agent_router(app: &Shared) -> Router {
     Router::new()
         .route("/v1/ping", get(ping))
         .route("/v1/auth/login", post(auth_login))
+        // v1.2 (ADR-0030): agent-runtime liveness — HMAC-signed, updates the
+        // owner-visible agent map, carries the session id for reconnect logic.
+        .route("/v1/heartbeat", get(heartbeat))
         .route("/v1/session/request", post(session_request))
         .route("/v1/session/status", get(session_status))
         .route("/v1/session/revoke", post(agent_revoke))
@@ -388,6 +502,8 @@ pub(crate) fn build_agent_router(app: &Shared) -> Router {
 }
 
 /// Admin-plane routes: owner API + v0.3 web console (ADR-0017).
+/// v1.2 (ADR-0032 §4): every request passes the Host allowlist first —
+/// DNS-rebinding names never reach the cookie-authenticated console.
 pub(crate) fn build_admin_router(app: &Shared) -> Router {
     Router::new()
         .route("/admin/ping", get(admin_ping))
@@ -397,16 +513,12 @@ pub(crate) fn build_admin_router(app: &Shared) -> Router {
         .route("/admin/revoke", post(admin_revoke))
         .route("/admin/sessions", get(admin_sessions))
         .route("/admin/rotate", post(admin_rotate))
-        .route("/admin/devices", get(admin_devices))
-        .route("/admin/devices/add", post(admin_device_add))
-        .route("/admin/devices/lock", post(admin_device_lock))
-        .route("/admin/devices/unlock", post(admin_device_unlock))
-        .route("/admin/devices/passwd", post(admin_device_passwd))
-        .route("/admin/devices/remove", post(admin_device_remove))
         .route("/admin/audit", get(admin_audit))
         .route("/admin/panic", post(admin_panic))
         .route("/admin/doctor", get(admin_doctor))
         .route("/admin/backup", post(admin_backup))
+        // v1.2 (ADR-0031): graceful session stop — `frtrol stop`.
+        .route("/admin/shutdown", post(admin_shutdown))
         // v0.7 observability (App B): unauthenticated local probes — loopback
         // plane only, zero secret data, for systemd/monitoring.
         .route("/healthz", get(healthz))
@@ -416,6 +528,7 @@ pub(crate) fn build_admin_router(app: &Shared) -> Router {
         .merge(webui::routes())
         .fallback(not_found)
         .layer(axum::middleware::map_response(body_limit_json))
+        .layer(axum::middleware::from_fn(host_guard))
         .with_state(app.clone())
 }
 
@@ -601,8 +714,8 @@ fn load_device_key(app: &App, conn: &Connection, device_id: &str) -> Result<Stri
 }
 
 /// The authenticated principal of an agent-plane request (ADR-0025).
-/// `Some(device_id)` = v1.1 device-signed request; `None` = legacy v1.0
-/// headerless request (resolved to the legacy device).
+/// v1.2: always `Some(device_id)` — the machine device (X-Far-Device is
+/// mandatory now; the v1.0 headerless compat shim is retired, ADR-0031).
 #[derive(Debug, Clone)]
 pub struct Authed {
     pub device_id: Option<String>,
@@ -646,13 +759,19 @@ fn verify_agent(
         Some(v) => v.to_string(),
         None => return Err(missing(app, "X-Far-Signature")),
     };
-    // v1.1 (ADR-0025 §2): device selector header. Present → device-signed
-    // request (payload gains a 6th line binding the claim). Absent → legacy.
-    let device_hdr = headers
+    // v1.2: the device selector header is REQUIRED (machine device, ADR-0028).
+    let Some(device_hdr) = headers
         .get("x-far-device")
         .and_then(|v| v.to_str().ok())
         .map(|v| v.trim().to_string())
-        .filter(|v| !v.is_empty());
+        .filter(|v| !v.is_empty())
+    else {
+        auth_reject(app, "unknown", "missing_headers");
+        return Err(ApiError::unauthorized(
+            "missing_headers",
+            "missing header: X-Far-Device (connect with 'frtrol agent' — it wires the headers for you)",
+        ));
+    };
 
     let ts: i64 = match ts_hdr.parse() {
         Ok(v) => v,
@@ -679,72 +798,48 @@ fn verify_agent(
     };
 
     // Resolve the principal FIRST — rate limiting happens BEFORE the device
-    // row resolves so unknown ids and headerless floods still hit the brake
+    // row resolves so unknown ids and floods still hit the brake
     // (v1.1 fix: no unthrottled rejection path).
-    let principal = match &device_hdr {
-        Some(id) => format!("dev:{id}"),
-        None => "legacy".to_string(),
-    };
+    let principal = format!("dev:{device_hdr}");
     rate_limit_check(app, &principal)?;
 
     // Resolve the device + key. Fail-closed at every step. Scoped so the lock
     // is released before the signature stage takes it again (std::sync::Mutex
     // is NOT reentrant — a held guard + second lock() = same-thread deadlock).
-    let (device_id, principal) = {
+    let device_id = {
         let conn = lock(app);
-        match &device_hdr {
-            Some(id) => {
-                if !crate::crypto::device_id_valid(id) {
-                    drop(conn);
-                    auth_reject(app, &principal, "invalid_device_id");
-                    return Err(ApiError::unauthorized(
-                        "invalid_device_id",
-                        format!("'{id}' is not a valid FAR-XXXX-XXXX device id (typo? the check char catches single mistakes)"),
-                    ));
-                }
-                let dev = state::device_get(&conn, id);
-                match dev {
-                    Some(d) if d.login_enabled || d.password_hash.is_none() => (id.clone(), id.clone()),
-                    Some(_) => {
-                        drop(conn);
-                        auth_reject(app, &principal, "device_locked");
-                        return Err(ApiError::forbidden(
-                            "device_locked",
-                            format!("device {id} is locked — unlock it on the owner side (frtrol device unlock {id})"),
-                        ));
-                    }
-                    None => {
-                        drop(conn);
-                        auth_reject(app, &principal, "unknown_device");
-                        return Err(ApiError::unauthorized("unknown_device", format!("no device with id {id}")));
-                    }
-                }
+        if !crate::crypto::device_id_valid(&device_hdr) {
+            drop(conn);
+            auth_reject(app, &principal, "invalid_device_id");
+            return Err(ApiError::unauthorized(
+                "invalid_device_id",
+                format!("'{device_hdr}' is not a valid FAR-XXXX-XXXX device id (typo? the check char catches single mistakes)"),
+            ));
+        }
+        match state::device_get(&conn, &device_hdr) {
+            Some(d) if d.login_enabled => device_hdr.clone(),
+            Some(_) => {
+                drop(conn);
+                auth_reject(app, &principal, "device_locked");
+                return Err(ApiError::forbidden(
+                    "device_locked",
+                    format!("device {device_hdr} is locked — its credentials were retired at a v1.2 migration or panic; connect with the current session password"),
+                ));
             }
             None => {
-                // v1.0 compat shim: headerless requests are the legacy device's.
-                match state::legacy_device(&conn) {
-                    Some(d) => (d.id.clone(), "legacy".to_string()),
-                    None => {
-                        drop(conn);
-                        auth_reject(app, "legacy", "no_legacy_device");
-                        return Err(ApiError::unauthorized(
-                            "no_legacy_device",
-                            "this server has no legacy (v1.0) device — authenticate with a device id (frtrol agent login)",
-                        ));
-                    }
-                }
+                drop(conn);
+                auth_reject(app, &principal, "unknown_device");
+                return Err(ApiError::unauthorized("unknown_device", format!("no device with id {device_hdr}")));
             }
         }
     };
 
-    // Build the signed payload. v1.1 devices sign 6 fields (device claim
-    // bound); legacy headerless requests keep the v1.0 5-field shape so old
-    // binaries keep working (ADR-0025 §2).
+    // Build the signed payload: 6 fields, device claim bound (ADR-0025 §2).
     let body_sha = crate::crypto::sha256_hex(body);
-    let payload = match &device_hdr {
-        Some(id) => format!("{}\n{id}", crypto::signing_payload(&ts_hdr, &nonce, method.as_str(), uri.path(), &body_sha)),
-        None => crypto::signing_payload(&ts_hdr, &nonce, method.as_str(), uri.path(), &body_sha),
-    };
+    let payload = format!(
+        "{}\n{device_id}",
+        crypto::signing_payload(&ts_hdr, &nonce, method.as_str(), uri.path(), &body_sha)
+    );
 
     let conn = lock(app);
     let device_key = load_device_key(app, &conn, &device_id)?;
@@ -764,20 +859,13 @@ fn verify_agent(
         return Err(ApiError::unauthorized("replay_detected", "nonce already used — request replay"));
     }
     // Verified → touch the device + reset this principal's backoff (SC-01).
-    if let Some(id) = state::device_get(&conn, &device_id).map(|_| device_id.clone()) {
-        state::device_touch(&conn, &id);
-    }
+    state::device_touch(&conn, &device_id);
     drop(conn);
     rate_record_success(app, &principal);
-    Ok(Authed { device_id: device_hdr })
+    Ok(Authed { device_id: Some(device_id) })
 }
 
 use crate::crypto;
-
-/// webui re-export (ADR-0027 §4: one code path for device keys).
-pub(crate) fn persist_device_key_ui(app: &App, conn: &Connection, id: &str, key: &str) -> Result<(), ApiError> {
-    persist_device_key(app, conn, id, key, "owner:webui")
-}
 
 fn verify_admin(app: &App, headers: &HeaderMap) -> Result<(), ApiError> {
     let auth = headers
@@ -836,13 +924,16 @@ async fn ping(
 }
 
 // ============================================================
-// v1.1 (ADR-0025 §2): device login → key exchange
+// v1.2 (ADR-0028 §1): session login → session key
 // ============================================================
 
 #[derive(Deserialize)]
 struct LoginBody {
     device_id: String,
     password: Option<String>,
+    /// v1.2: display name for the agent runtime (audit + console only —
+    /// a declaration, never authority; AG-03 semantics unchanged).
+    agent_name: Option<String>,
 }
 
 /// One shared dummy Argon2 hash so unknown-device logins cost the same as
@@ -855,33 +946,20 @@ fn dummy_argon2() -> &'static str {
     })
 }
 
-/// Store a device key in the right place (file: devices table; keyring: the
-/// kernel payload map). Single write path for login rotation, passwd, panic.
-pub(crate) fn persist_device_key(app: &App, conn: &Connection, id: &str, key: &str, actor: &str) -> Result<(), ApiError> {
-    if app.keyring_mode {
-        let payload = keyring::load(&app.data_dir)
-            .map_err(ApiError::from)?
-            .unwrap_or_else(|| "{}".into());
-        let mut map = state::parse_key_payload(&payload);
-        // normalize an unmigrated bare token under the legacy device id
-        if let Some(token) = map.remove("legacy") {
-            if let Some(leg) = state::legacy_device(conn) {
-                map.entry(leg.id).or_insert(token);
-            }
-        }
-        map.insert(id.to_string(), key.to_string());
-        keyring::store(&app.data_dir, &state::serialize_key_payload(&map)).map_err(ApiError::from)?;
-        state::audit(conn, &app.data_dir, actor, "device.key_rotated", Some(id), json!({ "store": "keyring" }));
-    } else {
-        state::device_set_key(conn, &app.data_dir, id, key, actor).map_err(ApiError::from)?;
-    }
-    Ok(())
+/// Sanitize a declared agent name (1–64 chars, no control chars) — display only.
+fn agent_name_ok(name: &str) -> String {
+    let n: String = name.trim().chars().filter(|c| !c.is_control()).collect();
+    if n.is_empty() { "agent".to_string() } else { n.chars().take(64).collect() }
 }
 
-/// POST /v1/auth/login — password → fresh device key (returned ONCE).
-/// No HMAC here: this is the pre-auth endpoint. TLS carries the password;
-/// the global burst brake + per-device backoff throttle guessing (Argon2id
-/// m=64 MiB makes each attempt expensive, ADR-0025 §2/§3).
+/// POST /v1/auth/login — session password → THIS run's session key (ADR-0028).
+/// No HMAC here: pre-auth endpoint. TLS carries the password; the global burst
+/// brake + per-principal backoff throttle guessing (Argon2id m=64 MiB).
+///
+/// v1.2 semantics: exactly one device (the machine). The key is NOT rotated on
+/// login — several agents may hold it concurrently (the session credential is
+/// one shared secret, like a Wi-Fi password; ADR-0028 §1). It dies at the next
+/// `frtrol start` / `frtrol panic`.
 async fn auth_login(
     State(app): State<Shared>,
     _headers: HeaderMap,
@@ -893,6 +971,7 @@ async fn auth_login(
     let b: LoginBody = parse_body(&body)?;
     let id = b.device_id.trim().to_string();
     let pw = b.password.unwrap_or_default();
+    let agent_name = b.agent_name.as_deref().map(agent_name_ok).unwrap_or_else(|| "agent".into());
     let principal = format!("login:{id}");
 
     if !crate::crypto::device_id_valid(&id) {
@@ -905,6 +984,10 @@ async fn auth_login(
     }
     rate_limit_check(&app, &principal)?;
 
+    let machine_id = {
+        let conn = lock(&app);
+        state::machine_id(&conn)
+    };
     let conn = lock(&app);
     let dev = match state::device_get(&conn, &id) {
         Some(d) => d,
@@ -917,16 +1000,27 @@ async fn auth_login(
             return Err(ApiError::unauthorized("invalid_credentials", "device id or password is wrong"));
         }
     };
-    if !dev.login_enabled {
+    if id != machine_id {
+        // v1.2: only the machine device exists. Anything else — including a
+        // pre-migration v1.1 device id — fails closed with the same generic
+        // error (no existence oracle beyond v1.1 behavior).
+        let _ = crate::crypto::password_verify(dummy_argon2(), &pw);
+        drop(conn);
+        rate_record_fail(&app, &principal);
+        let conn = lock(&app);
+        state::audit(&conn, &app.data_dir, "network", "auth.login_failed", Some(&id), json!({ "reason": "not_the_machine_device" }));
+        return Err(ApiError::unauthorized("invalid_credentials", "device id or password is wrong (get both from 'frtrol start' on the owner machine)"));
+    }
+    if !dev.login_enabled || dev.status == "locked" {
         return Err(ApiError::forbidden(
             "device_locked",
-            format!("device {id} is locked — unlock it on the owner side first"),
+            format!("device {id} is locked — restart the session (frtrol stop && frtrol start)"),
         ));
     }
     let Some(hash) = dev.password_hash.clone() else {
         return Err(ApiError::forbidden(
             "login_disabled",
-            format!("device {id} is key-only (legacy) — it has no password"),
+            "no session password is set — (re)start the daemon: frtrol start",
         ));
     };
     drop(conn);
@@ -935,31 +1029,79 @@ async fn auth_login(
         rate_record_fail(&app, &principal);
         let conn = lock(&app);
         state::audit(&conn, &app.data_dir, "network", "auth.login_failed", Some(&id), json!({ "reason": "bad_password" }));
-        return Err(ApiError::unauthorized("invalid_credentials", "device id or password is wrong"));
+        return Err(ApiError::unauthorized("invalid_credentials", "device id or session password is wrong (the password rotates on every 'frtrol start')"));
     }
     rate_record_success(&app, &principal);
 
-    // Password proven → mint a FRESH device key. The old key dies now: a key
-    // stolen earlier cannot survive the next legitimate login (ADR-0025 §2).
-    let new_key = crate::crypto::gen_device_key();
-    {
+    // Password proven → hand out THIS run's session key (not rotated on login,
+    // ADR-0028). Load through the same per-request path verify_agent uses.
+    let session_key = {
         let conn = lock(&app);
-        persist_device_key(&app, &conn, &id, &new_key, &format!("device:{id}"))?;
+        let k = load_device_key(&app, &conn, &id)?;
+        state::device_touch(&conn, &id);
         state::audit(
             &conn,
             &app.data_dir,
-            &format!("device:{id}"),
+            &format!("agent:{agent_name}"),
             "auth.login",
             Some(&id),
-            json!({ "name": dev.name, "key_rotated": true }),
+            json!({ "session_id": app.session_id, "name": agent_name, "note": "declared name — not verified" }),
         );
-    }
-    logline(&format!("device {id} ({}) logged in — key rotated", dev.name));
+        k
+    };
+    logline(&format!("agent '{agent_name}' logged in with the session password (device {id})"));
     Ok(Json(json!({
         "ok": true,
         "device_id": id,
-        "device_key": new_key,
-        "note": "store this key now — it is shown once and rotates on every login"
+        "session_id": app.session_id,
+        "key": session_key,
+        "agent_name": agent_name,
+        "note": "this key dies when the owner's session ends (frtrol stop / restart / panic)"
+    })))
+}
+
+// ============================================================
+// v1.2 (ADR-0030): agent runtime heartbeat
+// ============================================================
+
+/// GET /v1/heartbeat?name=<agent> — HMAC-signed liveness ping. Updates the
+/// owner-visible agent map; first sighting audits `agent.seen`. The response
+/// carries the session id so a runtime that reconnected to a NEW daemon run
+/// can detect the mismatch and re-authenticate.
+async fn heartbeat(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    method: Method,
+    uri: Uri,
+) -> Result<Json<Value>, ApiError> {
+    let authed = verify_agent(&app, &headers, &method, &uri, &[])?;
+    let name = qparam(&uri, "name").map(|n| agent_name_ok(&n)).unwrap_or_else(|| "agent".into());
+    let device = authed.device_id.clone().unwrap_or_default();
+    let nowts = state::now();
+    let first;
+    {
+        let mut agents = app.agents.lock().unwrap_or_else(|e| e.into_inner());
+        match agents.get_mut(&name) {
+            Some(a) => {
+                a.last_seen = nowts;
+                first = false;
+            }
+            None => {
+                agents.insert(name.clone(), AgentState { name: name.clone(), connected_at: nowts, last_seen: nowts });
+                first = true;
+            }
+        }
+    }
+    if first {
+        let conn = lock(&app);
+        state::audit(&conn, &app.data_dir, &format!("agent:{name}"), "agent.seen", Some(&device), json!({ "session_id": app.session_id }));
+        logline(&format!("agent runtime '{name}' connected (heartbeat)"));
+    }
+    Ok(Json(json!({
+        "ok": true,
+        "session_id": app.session_id,
+        "device_id": device,
+        "server_time": nowts,
     })))
 }
 
@@ -1691,13 +1833,22 @@ async fn desktop_input(
 async fn admin_ping(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     verify_admin(&app, &headers)?;
     let conn = lock(&app);
+    let machine_id = state::machine_id(&conn);
+    let (pending, active) = (state::count_pending(&conn), state::count_active(&conn));
+    drop(conn);
     Ok(Json(json!({
         "ok": true,
         "service": "farcontrol",
         "version": env!("CARGO_PKG_VERSION"),
         "server_time": state::now(),
-        "pending_count": state::count_pending(&conn),
-        "active_count": state::count_active(&conn),
+        "daemon": true,
+        "session_id": app.session_id,
+        "device_id": machine_id,
+        "started_at": app.started_at,
+        "uptime_secs": state::now() - app.started_at,
+        "pending_count": pending,
+        "active_count": active,
+        "agents": app.agents_json(),
     })))
 }
 
@@ -1792,173 +1943,48 @@ async fn admin_sessions(State(app): State<Shared>, headers: HeaderMap) -> Result
 
 async fn admin_rotate(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     verify_admin(&app, &headers)?;
-    // v1.1 (ADR-0025 §5): rotate maps to the LEGACY device. New devices use
-    // `device passwd <id>` (password + key) — their keys rotate on login too.
-    let new_key = crate::crypto::gen_device_key();
-    let legacy_id = {
+    // v1.2 (ADR-0028 §1): rotate = credential hygiene — a NEW session
+    // password + admin token, shown once. The session KEY is untouched:
+    // already-connected agents keep working; anyone holding only the old
+    // password must be given the new one. (Key rotation = `frtrol panic`.)
+    let password = crate::crypto::gen_password();
+    let admin_token = crate::crypto::gen_token();
+    let machine_id = {
         let conn = lock(&app);
-        let Some(leg) = state::legacy_device(&conn) else {
-            return Err(ApiError::not_found(
-                "no_legacy_device",
-                "this server has no legacy (v1.0) device — rotate a device instead: frtrol device passwd <FAR-XXXX-XXXX>",
-            ));
-        };
-        persist_device_key(&app, &conn, &leg.id, &new_key, "owner")?;
-        leg.id
+        let mid = state::machine_id(&conn);
+        let hash = crate::crypto::password_hash(&password).map_err(ApiError::from)?;
+        conn.execute(
+            "UPDATE devices SET password_hash = ?1, last_rotate = ?2 WHERE id = ?3",
+            rusqlite::params![hash, state::now(), mid],
+        )
+        .map_err(ApiError::from)?;
+        state::set_meta(&conn, "admin_token", &admin_token).map_err(ApiError::from)?;
+        state::audit(&conn, &app.data_dir, "owner", "session.rotated", Some(&mid), json!({ "note": "session password + admin token rotated (key untouched — connected agents stay connected)" }));
+        mid
     };
-    logline("legacy device key ROTATED — the old key is dead effective immediately");
-    Ok(Json(json!({ "agent_token": new_key, "device_id": legacy_id, "note": "give this to the legacy (v1.0) agent now — shown once" })))
-}
-
-// ============================================================
-// v1.1 (ADR-0025 §5 / ADR-0027 §4): device management — admin plane.
-// The web console and the owner CLI share these endpoints; the CLI calls the
-// same state-layer functions directly when offline.
-// ============================================================
-
-#[derive(Deserialize)]
-struct DeviceNameBody {
-    name: String,
-}
-
-#[derive(Deserialize)]
-struct DeviceIdBody {
-    id: String,
-}
-
-async fn admin_devices(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
-    verify_admin(&app, &headers)?;
-    let conn = lock(&app);
-    let mut devs = Vec::new();
-    for d in state::device_list(&conn) {
-        let mut j = state::device_json(&d);
-        j["active_sessions"] = json!(state::sessions_of_device(&conn, &d.id).len());
-        devs.push(j);
-    }
-    Ok(Json(json!({ "devices": devs, "count": devs.len() })))
-}
-
-async fn admin_device_add(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    verify_admin(&app, &headers)?;
-    let b: DeviceNameBody = parse_body(&body)?;
-    let password = crate::crypto::gen_password();
-    let key = crate::crypto::gen_device_key();
-    let conn = lock(&app);
-    // keyring mode: the row holds NO key — the kernel payload map does.
-    let row_key: &str = if app.keyring_mode { "" } else { key.as_str() };
-    let dev = state::device_create(&conn, &app.data_dir, b.name.trim(), Some(&password), row_key)
-        .map_err(|e| ApiError::bad_request("invalid_request", format!("{e}")))?;
-    if app.keyring_mode {
-        persist_device_key(&app, &conn, &dev.id, &key, "owner:webui")?;
-    }
-    logline(&format!("DEVICE ADDED {} ({}) — password shown once on the caller side", dev.id, dev.name));
+    write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    logline("session credentials ROTATED — the old session password is dead");
     Ok(Json(json!({
-        "device_id": dev.id,
-        "name": dev.name,
         "password": password,
-        "note": "the agent needs ONLY this device id + password — shown once"
+        "admin_token": admin_token,
+        "device_id": machine_id,
+        "note": "shown once — give the new session password to agents that need to (re)connect",
     })))
 }
 
-/// Lock = login disabled + key rotated + the device's active sessions revoked
-/// (ADR-0025 §5). Fail-closed: revocation errors abort the lock.
-async fn admin_device_lock(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Result<Json<Value>, ApiError> {
+/// POST /admin/shutdown — `frtrol stop`. Graceful session end: the daemon
+/// exits, in-memory session state dies, and the next start mints fresh
+/// credentials (ADR-0031). Approved grants persist (time-bounded policy
+/// objects) but are unusable until an agent re-logins with the new password.
+async fn admin_shutdown(State(app): State<Shared>, headers: HeaderMap) -> Result<Json<Value>, ApiError> {
     verify_admin(&app, &headers)?;
-    let b: DeviceIdBody = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let key = crate::crypto::gen_device_key();
-    let conn = lock(&app);
-    if state::device_get(&conn, &id).is_none() {
-        return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
+    {
+        let conn = lock(&app);
+        state::audit(&conn, &app.data_dir, "owner", "session.stopped", None, json!({ "session_id": app.session_id }));
     }
-    state::device_set_login(&conn, &app.data_dir, &id, false).map_err(ApiError::from)?;
-    persist_device_key(&app, &conn, &id, &key, "owner:webui")?;
-    let mut revoked = Vec::new();
-    for sid in state::sessions_of_device(&conn, &id) {
-        state::revoke_session(&conn, &app.data_dir, &sid, "device locked", "owner")?;
-        revoked.push(sid);
-    }
-    logline(&format!("DEVICE LOCKED {id} — {} session(s) revoked, key rotated", revoked.len()));
-    Ok(Json(json!({ "ok": true, "device_id": id, "revoked_sessions": revoked })))
-}
-
-async fn admin_device_unlock(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Result<Json<Value>, ApiError> {
-    verify_admin(&app, &headers)?;
-    let b: DeviceIdBody = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let conn = lock(&app);
-    if state::device_get(&conn, &id).is_none() {
-        return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-    }
-    state::device_set_login(&conn, &app.data_dir, &id, true).map_err(ApiError::from)?;
-    logline(&format!("DEVICE UNLOCKED {id} — login re-enabled (password unchanged)"));
-    Ok(Json(json!({ "ok": true, "device_id": id })))
-}
-
-async fn admin_device_passwd(
-    State(app): State<Shared>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Result<Json<Value>, ApiError> {
-    verify_admin(&app, &headers)?;
-    let b: DeviceIdBody = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let password = crate::crypto::gen_password();
-    let key = crate::crypto::gen_device_key();
-    let conn = lock(&app);
-    if state::device_get(&conn, &id).is_none() {
-        return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-    }
-    if app.keyring_mode {
-        // row holds no key; write the hash + row, then the map
-        let n = conn.execute("UPDATE devices SET password_hash = ?1, last_rotate = ?2 WHERE id = ?3 AND login_enabled = 1", rusqlite::params![
-            crate::crypto::password_hash(&password).map_err(ApiError::from)?, state::now(), id],
-        ).map_err(ApiError::from)?;
-        if n == 0 {
-            return Err(ApiError::bad_request("login_disabled", format!("device {id} is key-only (legacy) — it has no password")));
-        }
-        persist_device_key(&app, &conn, &id, &key, "owner:webui")?;
-        state::audit(&conn, &app.data_dir, "owner:webui", "device.passwd_rotated", Some(&id), json!({"note": "password + key rotated — old key dies now"}));
-    } else {
-        state::device_set_password(&conn, &app.data_dir, &id, &password, &key, "owner:webui")
-            .map_err(|e| ApiError::bad_request("login_disabled", format!("{e}")))?;
-    }
-    logline(&format!("DEVICE PASSWD {id} — password + key rotated (forces re-login)"));
-    Ok(Json(json!({
-        "device_id": id,
-        "password": password,
-        "note": "give the new password to the device — shown once; the old key is dead"
-    })))
-}
-
-async fn admin_device_remove(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> Result<Json<Value>, ApiError> {
-    verify_admin(&app, &headers)?;
-    let b: DeviceIdBody = parse_body(&body)?;
-    let id = b.id.trim().to_string();
-    let conn = lock(&app);
-    if state::device_get(&conn, &id).is_none() {
-        return Err(ApiError::not_found("device_not_found", format!("no device with id {id}")));
-    }
-    let mut revoked = Vec::new();
-    for sid in state::sessions_of_device(&conn, &id) {
-        state::revoke_session(&conn, &app.data_dir, &sid, "device removed", "owner")?;
-        revoked.push(sid);
-    }
-    if app.keyring_mode {
-        // drop the key from the kernel map too
-        if let Ok(Some(payload)) = keyring::load(&app.data_dir) {
-            let mut map = state::parse_key_payload(&payload);
-            map.remove(&id);
-            keyring::store(&app.data_dir, &state::serialize_key_payload(&map)).map_err(ApiError::from)?;
-        }
-    }
-    state::device_remove(&conn, &app.data_dir, &id).map_err(ApiError::from)?;
-    logline(&format!("DEVICE REMOVED {id} — {} session(s) revoked", revoked.len()));
-    Ok(Json(json!({ "ok": true, "device_id": id, "revoked_sessions": revoked })))
+    logline("shutdown requested — ending session");
+    app.shutdown.notify_waiters();
+    Ok(Json(json!({ "ok": true, "note": "session ending — every credential from this run dies now" })))
 }
 
 async fn admin_audit(State(app): State<Shared>, headers: HeaderMap, uri: Uri) -> Result<Json<Value>, ApiError> {
@@ -2160,12 +2186,20 @@ mod tests {
         }
     }
 
+    /// v1.2 (ADR-0028): the test fixture models the real session — ONE machine
+    /// device with key "test-agent-token" (what `frtrol start` minted) and a
+    /// session password "test-session-password" for login tests.
     pub(super) fn test_app() -> (Shared, TempDir) {
         let conn = state::open_mem().unwrap();
         let dir = TempDir::new();
-        // v1.1 (ADR-0025): agent auth needs a legacy device row — same shape a
-        // v1.0 data dir gets from migrate_legacy_token at daemon start.
-        state::device_create(&conn, dir.path(), "legacy", None, "test-agent-token").unwrap();
+        let mid = state::machine_id(&conn);
+        state::migrate_session_model(&conn, dir.path(), &mid).unwrap();
+        let hash = crate::crypto::password_hash("test-session-password").unwrap();
+        conn.execute(
+            "UPDATE devices SET password_hash = ?1, device_key = 'test-agent-token' WHERE id = ?2",
+            rusqlite::params![hash, mid],
+        )
+        .unwrap();
         let app = App {
             db: Mutex::new(conn),
             terms: term::Terms::default(),
@@ -2174,6 +2208,9 @@ mod tests {
             keyring_mode: false,
             ui_sessions: webui::UiSessions::default(),
             started_at: state::now(),
+            session_id: "ses_test".into(),
+            agents: Mutex::new(std::collections::HashMap::new()),
+            shutdown: tokio::sync::Notify::new(),
             cfg: Config::default(),
             data_dir: dir.path().clone(),
             home_root: dir.path().clone(),
@@ -2181,6 +2218,12 @@ mod tests {
             pol: Policy::default(),
         };
         (Arc::new(app), dir)
+    }
+
+    /// The machine device id + its session key as seeded by test_app().
+    pub(super) fn machine(app: &Shared) -> (String, String) {
+        let conn = lock(app);
+        (state::machine_id(&conn), "test-agent-token".to_string())
     }
 
     /// v1.1: signed headers carrying a DEVICE claim (6-field payload).
@@ -2255,7 +2298,8 @@ mod tests {
     #[tokio::test]
     async fn valid_signature_accepted() {
         let (app, _d) = test_app();
-        let headers = signed_headers("test-agent-token", "POST", "/v1/exec", "{}", 0);
+        let (mid, key) = machine(&app);
+        let headers = signed_headers_device(&key, &mid, "POST", "/v1/exec", "{}", 0);
         let uri: Uri = "/v1/exec".parse().unwrap();
         let method = Method::POST;
         verify_agent(&app, &headers, &method, &uri, b"{}").unwrap();
@@ -2264,7 +2308,8 @@ mod tests {
     #[tokio::test]
     async fn bad_signature_rejected() {
         let (app, _d) = test_app();
-        let mut headers = signed_headers("WRONG-token", "POST", "/v1/exec", "{}", 0);
+        let (mid, _key) = machine(&app);
+        let mut headers = signed_headers_device("WRONG-token", &mid, "POST", "/v1/exec", "{}", 0);
         headers.insert("x-far-timestamp", state::now().to_string().parse().unwrap());
         let uri: Uri = "/v1/exec".parse().unwrap();
         let method = Method::POST;
@@ -2276,7 +2321,8 @@ mod tests {
     async fn tampered_body_rejected() {
         let (app, _d) = test_app();
         // signed for body "{}" but server sees tampered body
-        let headers = signed_headers("test-agent-token", "POST", "/v1/exec", "{}", 0);
+        let (mid, key) = machine(&app);
+        let headers = signed_headers_device(&key, &mid, "POST", "/v1/exec", "{}", 0);
         let uri: Uri = "/v1/exec".parse().unwrap();
         let method = Method::POST;
         let err = verify_agent(&app, &headers, &method, &uri, b"{\"cmd\":\"evil\"}").unwrap_err();
@@ -2286,7 +2332,8 @@ mod tests {
     #[tokio::test]
     async fn replay_rejected() {
         let (app, _d) = test_app();
-        let headers = signed_headers("test-agent-token", "GET", "/v1/ping", "", 0);
+        let (mid, key) = machine(&app);
+        let headers = signed_headers_device(&key, &mid, "GET", "/v1/ping", "", 0);
         let uri: Uri = "/v1/ping".parse().unwrap();
         let method = Method::GET;
         verify_agent(&app, &headers, &method, &uri, b"").unwrap();
@@ -2297,7 +2344,8 @@ mod tests {
     #[tokio::test]
     async fn stale_timestamp_rejected() {
         let (app, _d) = test_app();
-        let headers = signed_headers("test-agent-token", "GET", "/v1/ping", "", 3600);
+        let (mid, key) = machine(&app);
+        let headers = signed_headers_device(&key, &mid, "GET", "/v1/ping", "", 3600);
         let uri: Uri = "/v1/ping".parse().unwrap();
         let method = Method::GET;
         let err = verify_agent(&app, &headers, &method, &uri, b"").unwrap_err();
@@ -2522,56 +2570,50 @@ async fn admin_panic(State(app): State<Shared>, headers: HeaderMap, body: Bytes)
         state::panic_stop(&conn, &app.data_dir, &reason)?
     };
     let killed = app.terms.reap_inactive(&[]);
-    // v1.1 (ADR-0025 §5): panic rotates EVERY device key — one stolen key must
-    // never survive the owner's emergency stop.
-    let rotated_devices = {
+    // v1.2 (ADR-0028): panic rotates the WHOLE credential set — password, key,
+    // admin token — and clears every live agent state. A stolen anything must
+    // not survive the owner's emergency stop.
+    let password = crate::crypto::gen_password();
+    let admin_token = crate::crypto::gen_token();
+    let machine_id = {
         let conn = lock(&app);
-        let mut rotated = 0usize;
-        let devs = state::device_list(&conn);
+        let mid = state::machine_id(&conn);
+        let key = crate::crypto::gen_device_key();
+        let hash = crate::crypto::password_hash(&password).map_err(ApiError::from)?;
+        conn.execute(
+            "UPDATE devices SET password_hash = ?1, device_key = ?2, last_rotate = ?3 WHERE id = ?4",
+            rusqlite::params![hash, if app.keyring_mode { None } else { Some(key.clone()) }, state::now(), mid],
+        )
+        .map_err(ApiError::from)?;
         if app.keyring_mode {
-            let payload = keyring::load(&app.data_dir)
-                .map_err(ApiError::from)?
-                .unwrap_or_else(|| "{}".into());
-            let mut map = state::parse_key_payload(&payload);
-            if let Some(token) = map.remove("legacy") {
-                if let Some(leg) = state::legacy_device(&conn) {
-                    map.entry(leg.id).or_insert(token);
-                }
-            }
-            for d in &devs {
-                map.insert(d.id.clone(), crate::crypto::gen_device_key());
-                rotated += 1;
-            }
+            let mut map = std::collections::BTreeMap::new();
+            map.insert(mid.clone(), key);
             keyring::store(&app.data_dir, &state::serialize_key_payload(&map)).map_err(ApiError::from)?;
-        } else {
-            for d in &devs {
-                let k = crate::crypto::gen_device_key();
-                state::device_set_key(&conn, &app.data_dir, &d.id, &k, "owner")?;
-                rotated += 1;
-            }
         }
-        rotated
-    };
-    {
-        let conn = lock(&app);
+        state::set_meta(&conn, "admin_token", &admin_token).map_err(ApiError::from)?;
         state::audit(
             &conn,
             &app.data_dir,
             "owner",
             "system.panic",
             None,
-            json!({ "revoked_sessions": revoked, "expired_pending": expired, "killed_terminals": killed, "rotated_device_keys": rotated_devices }),
+            json!({ "revoked_sessions": revoked, "expired_pending": expired, "killed_terminals": killed, "credentials_rotated": "password+key+admin_token" }),
         );
-    }
+        mid
+    };
+    write_secret(&app.data_dir.join("admin-token"), &admin_token)?;
+    app.agents.lock().unwrap_or_else(|e| e.into_inner()).clear();
     logline(&format!(
-        "PANIC — {revoked} session(s) revoked, {expired} pending expired, {killed} terminal(s) killed, {rotated_devices} device key(s) rotated"
+        "PANIC — {revoked} session(s) revoked, {expired} pending expired, {killed} terminal(s) killed, all credentials rotated"
     ));
     Ok(Json(json!({
         "revoked_sessions": revoked,
         "expired_pending": expired,
         "killed_terminals": killed,
-        "rotated_device_keys": rotated_devices,
-        "note": "every device key is dead — agents must re-login (device id + password)",
+        "password": password,
+        "admin_token": admin_token,
+        "device_id": machine_id,
+        "note": "every credential is dead — this new session password is shown once; agents reconnect with it",
     })))
 }
 
@@ -2723,14 +2765,20 @@ mod fuzz {
     use rand::SeedableRng;
     use tower::ServiceExt;
 
-    fn signed_parts(token: &str, method: &str, path: &str, body: &[u8]) -> HeaderMap {
+    /// v1.2: every fuzz request carries the machine-device claim (6-field
+    /// payload) so the corpus reaches the real parsers, not just the auth gate.
+    fn signed_parts(token: &str, device: &str, method: &str, path: &str, body: &[u8]) -> HeaderMap {
         let ts = state::now().to_string();
         let nonce = crypto::gen_nonce();
-        let sig = crypto::hmac_hex(token, &crypto::signing_payload(&ts, &nonce, method, path, &crypto::sha256_hex(body)));
+        let mut payload = crypto::signing_payload(&ts, &nonce, method, path, &crypto::sha256_hex(body));
+        payload.push('\n');
+        payload.push_str(device);
+        let sig = crypto::hmac_hex(token, &payload);
         let mut h = HeaderMap::new();
         h.insert("x-far-timestamp", ts.parse().unwrap());
         h.insert("x-far-nonce", nonce.parse().unwrap());
         h.insert("x-far-signature", sig.parse().unwrap());
+        h.insert("x-far-device", device.parse().unwrap());
         h.insert("content-type", "application/json".parse().unwrap());
         h
     }
@@ -2742,7 +2790,7 @@ mod fuzz {
             .body(axum::body::Body::from(body.to_vec()))
             .unwrap();
         let (mut parts, _) = req.into_parts();
-        for (k, v) in signed_parts(token, method, path, body).iter() {
+        for (k, v) in signed_parts(token, fuzz_device().as_str(), method, path, body).iter() {
             parts.headers.insert(k, v.clone());
         }
         let req = axum::http::Request::from_parts(parts, axum::body::Body::from(body.to_vec()));
@@ -2755,7 +2803,17 @@ mod fuzz {
 
     fn fuzz_app() -> Shared {
         let (app, _dir) = test_app();
+        let (mid, _key) = super::tests::machine(&app);
+        FUZZ_DEVICE.with(|d| d.borrow_mut().replace(mid));
         app
+    }
+
+    thread_local! {
+        static FUZZ_DEVICE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+    }
+
+    fn fuzz_device() -> String {
+        FUZZ_DEVICE.with(|d| d.borrow().clone().unwrap_or_else(|| "FAR-TEST-FUZZ".into()))
     }
 
     /// Every response must be a controlled 4xx (or 2xx) JSON error — a 5xx
@@ -2934,106 +2992,137 @@ mod fuzz {
 }
 
 #[cfg(test)]
-mod device_auth_tests {
-    use super::tests::{signed_headers, signed_headers_device, test_app};
+mod session_login_tests {
+    use super::tests::{machine, signed_headers_device, signed_headers, test_app};
     use super::*;
     use axum::body::Bytes;
 
-    fn mk_device(app: &Shared, name: &str, password: &str) -> (String, String) {
-        let conn = lock(app);
-        let key = crate::crypto::gen_device_key();
-        let d = state::device_create(&conn, &app.data_dir, name, Some(password), &key).unwrap();
-        (d.id, key)
-    }
-
     #[tokio::test]
-    async fn device_signed_request_accepted_and_bound() {
+    async fn machine_signed_request_accepted_and_bound() {
         let (app, _d) = test_app();
-        let (id, key) = mk_device(&app, "laptop", "pw-correct-horse");
-        let h = signed_headers_device(&key, &id, "GET", "/v1/ping", "", 0);
+        let (mid, key) = machine(&app);
+        let h = signed_headers_device(&key, &mid, "GET", "/v1/ping", "", 0);
         let uri: Uri = "/v1/ping".parse().unwrap();
         let authed = verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap();
-        assert_eq!(authed.device_id.as_deref(), Some(id.as_str()));
+        assert_eq!(authed.device_id.as_deref(), Some(mid.as_str()));
     }
 
     #[tokio::test]
-    async fn device_claim_cannot_be_swapped() {
-        // sign as device A but claim device B → the signature must fail
+    async fn swapped_device_claim_fails_closed() {
+        // sign with the machine key (claim inside the payload) but present a
+        // different X-Far-Device → unknown device, fail closed
         let (app, _d) = test_app();
-        let (ida, keya) = mk_device(&app, "a", "pw-one");
-        let (idb, _keyb) = mk_device(&app, "b", "pw-two");
-        let h = signed_headers_device(&keya, &ida, "GET", "/v1/ping", "", 0);
+        let (mid, key) = machine(&app);
+        let h = signed_headers_device(&key, &mid, "GET", "/v1/ping", "", 0);
         let mut h2 = h.clone();
-        h2.insert("x-far-device", idb.parse().unwrap());
+        let other = crate::crypto::gen_device_id();
+        h2.insert("x-far-device", other.parse().unwrap());
         let uri: Uri = "/v1/ping".parse().unwrap();
         let err = verify_agent(&app, &h2, &Method::GET, &uri, b"").unwrap_err();
-        assert_eq!(err.code, "invalid_signature", "claiming another device must fail closed");
+        assert_eq!(err.code, "unknown_device", "claiming another device must fail closed");
     }
 
     #[tokio::test]
     async fn invalid_device_id_format_rejected_pre_key() {
         let (app, _d) = test_app();
-        let h = signed_headers("test-agent-token", "GET", "/v1/ping", "", 0);
-        let mut h2 = h.clone();
-        h2.insert("x-far-device", "FAR-NOPE".parse().unwrap());
+        let (_mid, key) = machine(&app);
+        let h = signed_headers_device(&key, "FAR-NOPE", "GET", "/v1/ping", "", 0);
         let uri: Uri = "/v1/ping".parse().unwrap();
-        let err = verify_agent(&app, &h2, &Method::GET, &uri, b"").unwrap_err();
+        let err = verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap_err();
         assert_eq!(err.code, "invalid_device_id");
     }
 
     #[tokio::test]
-    async fn locked_device_rejected_before_signature() {
-        let (app, _d) = test_app();
-        let (id, key) = mk_device(&app, "victim", "pw");
-        {
-            let conn = lock(&app);
-            state::device_set_login(&conn, &app.data_dir, &id, false).unwrap();
-        }
-        let h = signed_headers_device(&key, &id, "GET", "/v1/ping", "", 0);
-        let uri: Uri = "/v1/ping".parse().unwrap();
-        let err = verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap_err();
-        assert_eq!(err.code, "device_locked");
-    }
-
-    #[tokio::test]
-    async fn legacy_headerless_still_works_after_migration() {
-        // test_app seeds the legacy device with key "test-agent-token"
+    async fn headerless_v10_request_rejected() {
+        // v1.2 removed the v1.0 headerless compat shim (ADR-0031) — a 5-field
+        // signature without X-Far-Device must fail closed.
         let (app, _d) = test_app();
         let h = signed_headers("test-agent-token", "GET", "/v1/ping", "", 0);
         let uri: Uri = "/v1/ping".parse().unwrap();
-        let authed = verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap();
-        assert!(authed.device_id.is_none(), "legacy requests stay deviceless");
+        let err = verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap_err();
+        assert_eq!(err.code, "missing_headers", "X-Far-Device is mandatory in v1.2");
     }
 
     #[tokio::test]
-    async fn login_endpoint_full_flow() {
+    async fn login_flow_and_non_rotating_key() {
         use tower::util::ServiceExt;
         let (app, _d) = test_app();
-        let (id, _key) = mk_device(&app, "login-test", "right-password");
+        let (mid, _key) = machine(&app);
         let router = build_agent_router(&app);
 
-        let body = Bytes::from(serde_json::to_vec(&json!({"device_id": id, "password": "wrong"})).unwrap());
+        // wrong password → 401
+        let body = Bytes::from(serde_json::to_vec(&json!({"device_id": mid, "password": "wrong"})).unwrap());
         let res = router.clone().oneshot(
             axum::http::Request::builder().method("POST").uri("/v1/auth/login")
                 .header("content-type", "application/json").body(axum::body::Body::from(body.to_vec())).unwrap()
         ).await.unwrap();
         assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
 
-        let body = Bytes::from(serde_json::to_vec(&json!({"device_id": id, "password": "right-password"})).unwrap());
-        let res = router.oneshot(
+        // unknown device id → 401 generic (no oracle)
+        let body = Bytes::from(serde_json::to_vec(&json!({"device_id": crate::crypto::gen_device_id(), "password": "x"})).unwrap());
+        let res = router.clone().oneshot(
             axum::http::Request::builder().method("POST").uri("/v1/auth/login")
                 .header("content-type", "application/json").body(axum::body::Body::from(body.to_vec())).unwrap()
+        ).await.unwrap();
+        assert_eq!(res.status(), StatusCode::UNAUTHORIZED);
+
+        // right password → the session key (NOT rotated on login, ADR-0028)
+        let login = |router: &Router| {
+            let body = Bytes::from(serde_json::to_vec(&json!({"device_id": mid, "password": "test-session-password", "agent_name": "t"})).unwrap());
+            let router = router.clone();
+            async move {
+                router.oneshot(
+                    axum::http::Request::builder().method("POST").uri("/v1/auth/login")
+                        .header("content-type", "application/json").body(axum::body::Body::from(body.to_vec())).unwrap()
+                ).await.unwrap()
+            }
+        };
+        let res = login(&router).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let text = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+        let v: Value = serde_json::from_slice(&text).unwrap();
+        let key1 = v["key"].as_str().unwrap().to_string();
+        assert!(!key1.is_empty(), "login returns the session key once");
+        assert_eq!(v["session_id"].as_str(), Some("ses_test"));
+
+        // a SECOND login returns the SAME key (multi-agent, no rotation)
+        let res = login(&router).await;
+        assert_eq!(res.status(), StatusCode::OK);
+        let text = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
+        let v: Value = serde_json::from_slice(&text).unwrap();
+        assert_eq!(v["key"].as_str(), Some(key1.as_str()), "v1.2: login does NOT rotate the session key");
+
+        // the returned key WORKS for signed requests
+        let h = signed_headers_device(&key1, &mid, "GET", "/v1/ping", "", 0);
+        let uri: Uri = "/v1/ping".parse().unwrap();
+        verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap();
+    }
+
+    #[tokio::test]
+    async fn heartbeat_updates_agent_map() {
+        use tower::util::ServiceExt;
+        let (app, _d) = test_app();
+        let (mid, key) = machine(&app);
+        let router = build_agent_router(&app);
+        let h = signed_headers_device(&key, &mid, "GET", "/v1/heartbeat", "", 0);
+        let res = router.oneshot(
+            axum::http::Request::builder().method("GET").uri("/v1/heartbeat?name=heartbeat-test")
+                .body(axum::body::Body::empty()).map(|r| {
+                    let (mut parts, body) = r.into_parts();
+                    for (k, v) in h.iter() { parts.headers.insert(k, v.clone()); }
+                    axum::http::Request::from_parts(parts, body)
+                }).unwrap()
         ).await.unwrap();
         assert_eq!(res.status(), StatusCode::OK);
         let text = axum::body::to_bytes(res.into_body(), 1 << 20).await.unwrap();
         let v: Value = serde_json::from_slice(&text).unwrap();
-        let new_key = v["device_key"].as_str().unwrap().to_string();
-        assert!(!new_key.is_empty(), "login returns the minted device key once");
-
-        // the minted key must WORK for signed requests, the old key must not
-        let h = signed_headers_device(&new_key, &id, "GET", "/v1/ping", "", 0);
-        let uri: Uri = "/v1/ping".parse().unwrap();
-        verify_agent(&app, &h, &Method::GET, &uri, b"").unwrap();
+        assert_eq!(v["session_id"].as_str(), Some("ses_test"));
+        let agents = app.agents_json();
+        assert!(agents.iter().any(|a| a["name"] == "heartbeat-test"), "agent visible to the owner: {agents:?}");
+        // audit records the first sighting
+        let conn = lock(&app);
+        let audit = state::list_audit(&conn, 10);
+        assert!(audit.iter().any(|e| e["action"] == "agent.seen"), "agent.seen audited");
     }
 
     #[tokio::test]
@@ -3051,7 +3140,6 @@ mod device_auth_tests {
                 *t = old;
             }
         }
-        // A: layer-2 progressive lock engaged (12 strikes >= threshold 10)
         let err = rate_limit_check(&app, "FAR-AAAA-BBBB").unwrap_err();
         assert_eq!(err.code, "rate_limited", "hammered device must be locked");
         // B: different principal, clean window -> allowed (per-device scope works)
@@ -3060,5 +3148,4 @@ mod device_auth_tests {
         rate_record_success(&app, "FAR-AAAA-BBBB");
         rate_limit_check(&app, "FAR-AAAA-BBBB").expect("recovery after success");
     }
-
 }

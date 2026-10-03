@@ -938,54 +938,6 @@ fn row_to_device(r: &rusqlite::Row) -> rusqlite::Result<DeviceRow> {
 fn query_device(conn: &Connection, sql: &str, p: &[&dyn rusqlite::ToSql]) -> Option<DeviceRow> {
     conn.query_row(sql, p, row_to_device).ok()
 }
-
-/// Create a device with a generated FAR-XXXX-XXXX id (collision-checked) and a
-/// fresh random device key. `password` is stored Argon2-hashed; pass None for a
-/// key-only (legacy) row. Caller hands `{id, password, key}` to the right side.
-pub fn device_create(
-    conn: &Connection,
-    dir: &Path,
-    name: &str,
-    password: Option<&str>,
-    key: &str,
-) -> anyhow::Result<DeviceRow> {
-    let name = name.trim();
-    if name.is_empty() || name.len() > 64 {
-        anyhow::bail!("device name must be 1–64 chars");
-    }
-    let hash = match password {
-        Some(p) => Some(crate::crypto::password_hash(p)?),
-        None => None,
-    };
-    // id collision check (paranoid; 35-bit space)
-    let mut id = crate::crypto::gen_device_id();
-    for _ in 0..8 {
-        if query_device(conn, "SELECT id FROM devices WHERE id = ?1", params![id]).is_none() {
-            break;
-        }
-        id = crate::crypto::gen_device_id();
-    }
-    let ts = now();
-    conn.execute(
-        "INSERT INTO devices(id, name, password_hash, device_key, status, login_enabled, created_at) VALUES (?1, ?2, ?3, ?4, 'active', ?5, ?6)",
-        params![id, name, hash, key, password.is_some() as i64, ts],
-    )?;
-    audit(
-        conn,
-        dir,
-        "owner",
-        "device.created",
-        Some(&id),
-        json!({"name": name, "login_enabled": password.is_some()}),
-    );
-    Ok(query_device(
-        conn,
-        &format!("SELECT {DEV_COLS} FROM devices WHERE id = ?1"),
-        params![id],
-    )
-    .expect("just inserted"))
-}
-
 pub fn device_get(conn: &Connection, id: &str) -> Option<DeviceRow> {
     query_device(conn, &format!("SELECT {DEV_COLS} FROM devices WHERE id = ?1"), params![id])
 }
@@ -1006,95 +958,6 @@ pub fn count_devices(conn: &Connection) -> i64 {
     conn.query_row("SELECT COUNT(*) FROM devices", [], |r| r.get(0)).unwrap_or(0)
 }
 
-/// The key-only legacy device (v1.0 agent-token migration, ADR-0025 §6).
-pub fn legacy_device(conn: &Connection) -> Option<DeviceRow> {
-    query_device(
-        conn,
-        &format!("SELECT {DEV_COLS} FROM devices WHERE login_enabled = 0 AND password_hash IS NULL ORDER BY created_at ASC LIMIT 1"),
-        &[],
-    )
-}
-
-/// v1.0 → v1.1 migration: the meta agent_token becomes the legacy device's key.
-/// Idempotent — no-op when the devices table already has a legacy row or the
-/// meta token is absent. Returns the legacy device when a migration happened.
-pub fn migrate_legacy_token(conn: &Connection, dir: &Path) -> anyhow::Result<Option<DeviceRow>> {
-    if legacy_device(conn).is_some() {
-        return Ok(None);
-    }
-    let Some(token) = get_meta(conn, "agent_token") else { return Ok(None) };
-    if token.is_empty() {
-        return Ok(None);
-    }
-    let dev = device_create(conn, dir, "legacy", None, &token)?;
-    // The devices table is now the single source of truth for this key.
-    let _ = conn.execute("DELETE FROM meta WHERE key = 'agent_token'", []);
-    audit(
-        conn,
-        dir,
-        "system",
-        "device.legacy_migrated",
-        Some(&dev.id),
-        json!({"note": "v1.0 agent token became the legacy device key (key-only, login disabled)"}),
-    );
-    Ok(Some(dev))
-}
-
-pub fn device_set_key(conn: &Connection, dir: &Path, id: &str, key: &str, actor: &str) -> anyhow::Result<()> {
-    let n = conn.execute("UPDATE devices SET device_key = ?1, last_rotate = ?2 WHERE id = ?3", params![key, now(), id])?;
-    if n == 0 {
-        anyhow::bail!("device {id} not found");
-    }
-    audit(conn, dir, actor, "device.key_rotated", Some(id), json!({}));
-    Ok(())
-}
-
-/// Rotate the password: new Argon2 hash + fresh key (forces re-login).
-pub fn device_set_password(
-    conn: &Connection,
-    dir: &Path,
-    id: &str,
-    password: &str,
-    key: &str,
-    actor: &str,
-) -> anyhow::Result<()> {
-    let hash = crate::crypto::password_hash(password)?;
-    let n = conn.execute(
-        "UPDATE devices SET password_hash = ?1, device_key = ?2, last_rotate = ?3 WHERE id = ?4 AND login_enabled = 1",
-        params![hash, key, now(), id],
-    )?;
-    if n == 0 {
-        anyhow::bail!("device {id} not found or login disabled (legacy key-only row)");
-    }
-    audit(conn, dir, actor, "device.passwd_rotated", Some(id), json!({"note": "password + key rotated — old key dies now"}));
-    Ok(())
-}
-
-pub fn device_set_login(conn: &Connection, dir: &Path, id: &str, enabled: bool) -> anyhow::Result<()> {
-    let n = conn.execute("UPDATE devices SET login_enabled = ?1 WHERE id = ?2", params![enabled as i64, id])?;
-    if n == 0 {
-        anyhow::bail!("device {id} not found");
-    }
-    audit(
-        conn,
-        dir,
-        "owner",
-        if enabled { "device.unlocked" } else { "device.locked" },
-        Some(id),
-        json!({}),
-    );
-    Ok(())
-}
-
-pub fn device_remove(conn: &Connection, dir: &Path, id: &str) -> anyhow::Result<()> {
-    let n = conn.execute("DELETE FROM devices WHERE id = ?1", params![id])?;
-    if n == 0 {
-        anyhow::bail!("device {id} not found");
-    }
-    audit(conn, dir, "owner", "device.removed", Some(id), json!({}));
-    Ok(())
-}
-
 pub fn device_touch(conn: &Connection, id: &str) {
     let _ = conn.execute("UPDATE devices SET last_seen = ?1 WHERE id = ?2", params![now(), id]);
 }
@@ -1111,23 +974,6 @@ pub fn sessions_of_device(conn: &Connection, id: &str) -> Vec<String> {
     }
     out
 }
-
-/// Device JSON for listings (never leaks hash or key).
-pub fn device_json(d: &DeviceRow) -> Value {
-    let sessions = 0; // callers patch this in with a DB count when needed
-    json!({
-        "id": d.id,
-        "name": d.name,
-        "status": d.status,
-        "login_enabled": d.login_enabled,
-        "key_only": d.password_hash.is_none(),
-        "created_at": d.created_at,
-        "last_seen": d.last_seen,
-        "last_rotate": d.last_rotate,
-        "sessions_hint": sessions,
-    })
-}
-
 // ============================================================
 // Keyring payload map (pure functions — unit-testable without a kernel).
 // v1.1 keyring mode stores {"FAR-…": "key"} in ONE kernel key; v1.0 payloads
@@ -1542,164 +1388,39 @@ mod device_tests {
         (dir, conn)
     }
 
-    fn pol() -> Policy {
-        Policy::default()
-    }
-
     #[test]
-    fn device_lifecycle_create_get_list() {
+    fn machine_device_lifecycle_and_secrecy() {
         let (dir, conn) = d();
-        let key = crate::crypto::gen_device_key();
-        let dev = device_create(&conn, &dir, "office-laptop", Some("harbor-tiger-42-blue"), &key).unwrap();
-        assert!(crate::crypto::device_id_valid(&dev.id));
-        assert_eq!(dev.name, "office-laptop");
+        let mid = machine_id(&conn);
+        assert!(crate::crypto::device_id_valid(&mid));
+        assert_eq!(machine_id(&conn), mid, "stable once minted");
+        let dev = ensure_machine_device(&conn, &dir, &mid).unwrap();
+        assert_eq!(dev.id, mid);
+        assert_eq!(dev.name, "machine");
         assert!(dev.login_enabled);
-        assert!(dev.password_hash.is_some());
-        assert!(dev.password_hash.unwrap().starts_with("$argon2id$"));
-        assert_eq!(dev.device_key.as_deref(), Some(key.as_str()));
+        assert!(dev.password_hash.is_none(), "no password until a session begins");
+        // idempotent
+        let again = ensure_machine_device(&conn, &dir, &mid).unwrap();
+        assert_eq!(again.id, mid);
         assert_eq!(count_devices(&conn), 1);
-        assert_eq!(device_list(&conn).len(), 1);
-
-        // get + json must never leak hash/key
-        let got = device_get(&conn, &dev.id).unwrap();
-        assert_eq!(got.id, dev.id);
-        let j = device_json(&got).to_string();
-        assert!(!j.contains("argon2"));
-        assert!(!j.contains(&key), "device_json must not leak the key");
-
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn device_name_validation() {
+    fn keyring_payload_map_roundtrip_v12() {
         let (dir, conn) = d();
-        assert!(device_create(&conn, &dir, "", Some("x"), "k").is_err());
-        let long = "a".repeat(65);
-        assert!(device_create(&conn, &dir, &long, Some("x"), "k").is_err());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn login_disabled_for_key_only_rows() {
-        let (dir, conn) = d();
-        let dev = device_create(&conn, &dir, "legacy", None, "key-only").unwrap();
-        assert!(!dev.login_enabled);
-        assert!(dev.password_hash.is_none());
-        assert_eq!(legacy_device(&conn).map(|d| d.id), Some(dev.id));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn legacy_token_migration_is_idempotent_and_moves_source_of_truth() {
-        let (dir, conn) = d();
-        set_meta(&conn, "agent_token", "old-v1-token").unwrap();
-        let migrated = migrate_legacy_token(&conn, &dir).unwrap();
-        assert!(migrated.is_some(), "first call migrates");
-        let id = migrated.unwrap().id;
-        // token moved: meta gone, key lives in devices
-        assert!(get_meta(&conn, "agent_token").is_none(), "meta token must be consumed");
-        assert_eq!(device_get(&conn, &id).unwrap().device_key.as_deref(), Some("old-v1-token"));
-        // second call = no-op
-        assert!(migrate_legacy_token(&conn, &dir).unwrap().is_none());
-        assert_eq!(count_devices(&conn), 1);
-        // fresh DB (no token) → nothing to migrate
-        let (dir2, conn2) = d();
-        assert!(migrate_legacy_token(&conn2, &dir2).unwrap().is_none());
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::remove_dir_all(&dir2);
-    }
-
-    #[test]
-    fn passwd_rotation_kills_old_key_and_hash() {
-        let (dir, conn) = d();
-        let dev = device_create(&conn, &dir, "d1", Some("first-password"), "k1").unwrap();
-        device_set_password(&conn, &dir, &dev.id, "second-password", "k2", "owner:test").unwrap();
-        let after = device_get(&conn, &dev.id).unwrap();
-        assert_eq!(after.device_key.as_deref(), Some("k2"));
-        assert!(crate::crypto::password_verify(after.password_hash.as_deref().unwrap(), "second-password"));
-        assert!(!crate::crypto::password_verify(after.password_hash.as_deref().unwrap(), "first-password"));
-        assert!(after.last_rotate.is_some());
-        // key-only (legacy) rows cannot rotate a password
-        let legacy = device_create(&conn, &dir, "legacy", None, "kl").unwrap();
-        assert!(device_set_password(&conn, &dir, &legacy.id, "nope", "k3", "owner:test").is_err());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn device_lock_unlock_and_remove() {
-        let (dir, conn) = d();
-        let dev = device_create(&conn, &dir, "d1", Some("pw"), "k").unwrap();
-        device_set_login(&conn, &dir, &dev.id, false).unwrap();
-        assert!(!device_get(&conn, &dev.id).unwrap().login_enabled);
-        device_set_login(&conn, &dir, &dev.id, true).unwrap();
-        assert!(device_get(&conn, &dev.id).unwrap().login_enabled);
-        device_remove(&conn, &dir, &dev.id).unwrap();
-        assert!(device_get(&conn, &dev.id).is_none());
-        assert!(device_remove(&conn, &dir, &dev.id).is_err(), "double remove must fail");
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn sessions_bind_to_device_and_can_be_swept() {
-        let (dir, conn) = d();
-        let dev = device_create(&conn, &dir, "d1", Some("pw"), "k").unwrap();
-        let req = create_request(
-            &conn,
-            &dir,
-            &pol(),
-            NewRequest {
-                agent_name: "myai",
-                agent_identity: None,
-                scope: "terminal_only",
-                hours: 6.0,
-                reason: "test",
-                device_id: Some(&dev.id),
-            },
-        )
-        .unwrap();
-        assert_eq!(req.device_id.as_deref(), Some(dev.id.as_str()));
-        let ses = approve_request(&conn, &dir, &pol(), &req.id, None).unwrap();
-        assert_eq!(ses.device_id.as_deref(), Some(dev.id.as_str()));
-        assert_eq!(sessions_of_device(&conn, &dev.id), vec![ses.id.clone()]);
-        revoke_session(&conn, &dir, &ses.id, "owner test", "owner").unwrap();
-        assert!(sessions_of_device(&conn, &dev.id).is_empty(), "revoked session leaves the device sweep");
-
-        // legacy (headerless) request: device_id NULL
-        let req2 = create_request(
-            &conn,
-            &dir,
-            &pol(),
-            NewRequest { agent_name: "myai", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "legacy", device_id: None },
-        )
-        .unwrap();
-        assert!(req2.device_id.is_none());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn keyring_payload_map_roundtrip_and_legacy_wrap() {
-        // v1.1 map format roundtrips
+        // begin_daemon_session in keyring mode leaves device_key NULL in the DB
+        let mid = machine_id(&conn);
+        migrate_session_model(&conn, &dir, &mid).unwrap();
+        let s = begin_daemon_session(&conn, &dir, &mid, false).unwrap();
+        assert!(device_get(&conn, &mid).unwrap().device_key.is_none());
         let mut map = std::collections::BTreeMap::new();
-        map.insert("FAR-7K2M-QX94".into(), "key-one".into());
-        map.insert("FAR-ABCD-EFGH".into(), "key-two".into());
-        let s = serialize_key_payload(&map);
-        assert_eq!(parse_key_payload(&s), map);
-
-        // v1.0 bare-token payload wraps as the legacy key
-        let legacy = parse_key_payload("old-bare-token");
-        assert_eq!(legacy.get("legacy").map(|s| s.as_str()), Some("old-bare-token"));
-
-        // garbage/empty → empty map (fail closed, nothing to verify against)
-        assert!(parse_key_payload("").is_empty());
-        assert!(parse_key_payload("not json {").is_empty() || parse_key_payload("not json {").len() <= 1);
-        // note: "not json {" is not a bare token? it IS a bare string → wrapped as legacy.
-        // acceptable: any non-JSON payload is treated as a bare v1.0 token.
+        map.insert(mid.clone(), s.key.clone());
+        let payload = serialize_key_payload(&map);
+        assert_eq!(parse_key_payload(&payload), map, "the keyring payload is exactly {{machine_id: key}}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
-
-// ============================================================
-// v1.2.0 session model tests (ADR-0028 / ADR-0031 §5)
-// ============================================================
 
 #[cfg(test)]
 mod session_model_tests {
@@ -1742,7 +1463,12 @@ mod session_model_tests {
     fn migrate_session_model_locks_v11_devices_and_revokes_their_grants() {
         let (conn, dir) = setup();
         // simulate a v1.1 install: a registry device with password + key + an active grant
-        let old = device_create(&conn, dir.path(), "v1.1-device", Some("some-old-password"), "v1.1-key-material").unwrap();
+        let old_id = "FAR-TEST-1DEV".to_string();
+        conn.execute(
+            "INSERT INTO devices(id, name, password_hash, device_key, status, login_enabled, created_at) VALUES (?1, 'v1.1-device', ?2, 'v1.1-key-material', 'active', 1, ?3)",
+            params![old_id, crate::crypto::password_hash("some-old-password").unwrap(), now()],
+        ).unwrap();
+        let old = device_get(&conn, &old_id).unwrap();
         let req = create_request(
             &conn,
             dir.path(),
@@ -1769,7 +1495,7 @@ mod session_model_tests {
 
         // idempotent: re-run changes nothing
         migrate_session_model(&conn, dir.path(), &mid).unwrap();
-        assert!(device_get(&conn, &old.id).unwrap().login_enabled == false);
+        assert!(!device_get(&conn, &old.id).unwrap().login_enabled);
         let n5: i64 = conn.query_row("SELECT COUNT(*) FROM migrations WHERE id=5", [], |r| r.get(0)).unwrap();
         assert_eq!(n5, 1, "migration 5 recorded exactly once");
     }

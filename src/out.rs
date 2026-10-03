@@ -26,11 +26,9 @@ use owo_colors::OwoColorize;
 pub fn dot(state: Dot) -> String {
     let (glyph, color, word) = match state {
         Dot::Warn => ("◐", "yellow", "warn"),
-        Dot::Dead => ("○", "dimmed", "quiet"),
         Dot::Dead2 => ("○", "dimmed", "expired"),
         Dot::Revoked => ("●", "red", "revoked"),
         Dot::Active => ("●", "green", "active"),
-        Dot::Locked => ("●", "red", "locked"),
     };
     let (g, w) = (glyph.to_string(), word.to_string());
     if !styled() {
@@ -48,11 +46,9 @@ pub fn dot(state: Dot) -> String {
 #[derive(Clone, Copy)]
 pub enum Dot {
     Warn,
-    Dead,
     Dead2,
     Revoked,
     Active,
-    Locked,
 }
 
 /// Success receipt: `✓ <line>` (green on TTY).
@@ -213,7 +209,7 @@ mod tests {
 
     #[test]
     fn dot_always_carries_a_word() {
-        for d in [Dot::Warn, Dot::Dead, Dot::Dead2, Dot::Revoked, Dot::Active, Dot::Locked] {
+        for d in [Dot::Warn, Dot::Dead2, Dot::Revoked, Dot::Active] {
             let s = dot(d);
             assert!(s.contains('●') || s.contains('◐') || s.contains('○') || s.contains('✗'), "glyph present: {s}");
             assert!(s.split_whitespace().count() >= 2, "word present: {s}");
