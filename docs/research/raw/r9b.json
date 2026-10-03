@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://rustc-dev-guide.rust-lang.org",
+    "name": "Debugging the compiler",
+    "snippet": "This chapter contains a few tips to debug the compiler . debug delayed bugs. It turns them into normal errors , i.e. makes them visible. -Z track- diagnostics can ...",
+    "host_name": "rustc-dev-guide.rust-lang.org",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://trpl.rantai.dev",
+    "name": "Chapter 15 | The Rust Programming Language",
+    "snippet": "Chapter 15 of TRPL delves into the intricacies of exception handling in Rust , providing a comprehensive overview of how Rust approaches error management. Read more",
+    "host_name": "trpl.rantai.dev",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com",
+    "name": "Diagnostic message formatting revamp · Issue #8304",
+    "snippet": "Dec 29, 2025 — The Rust compiler represents its diagnostic outputs in a slightly richer way: a single diagnostic may have both \"carets\" and \"sub- diagnostics \"",
+    "host_name": "github.com",
+    "rank": 2,
+    "date": "Dec 29, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.linkedin.com",
+    "name": "Real-time code-analysis basics - Debugging Rust Code with AI",
+    "snippet": "Rust-analyzer catches syntax errors, type mismatches, memory issues . It flags them before they cause problems. At the same time, AI assistants ...",
+    "host_name": "www.linkedin.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://dl.acm.org",
+    "name": "On Designing Programming Error Messages for Novices",
+    "snippet": "by P Denny · 2021 · Cited by 103 — They define readability as “a human judgment of how easy a text is to understand” [16, p121], and argue that the readability of a program is ... Read more",
+    "host_name": "dl.acm.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://gist.github.com",
+    "name": "rust-best-practices.md",
+    "snippet": "This document is intended to replace the previous rust -best-practices.md Gist in full. It integrates ownership, API design , error handling, testing, linting, ... Read more",
+    "host_name": "gist.github.com",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://error.rust.phpboyscout.uk",
+    "name": "Errors are values, not handled events - rtb-error",
+    "snippet": "A Go error is an interface value with a string in it. Attaching a machine- readable identity, a separate line of human advice, and a rendering strategy. An  ...",
+    "host_name": "error.rust.phpboyscout.uk",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://internals.rust-lang.org",
+    "name": "Translating the compiler - Page 2",
+    "snippet": "Jun 8, 2019 — So there's a larger roadmap for improving diagnostics , and a part of that is using diagnostic structs. The Fluent work can actually piggyback on ... Read more",
+    "host_name": "internals.rust-lang.org",
+    "rank": 7,
+    "date": "Jun 8, 2019",
+    "favicon": ""
+  }
+]

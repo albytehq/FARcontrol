@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://www.section508.gov",
+    "name": "Making Color Usage Accessible",
+    "snippet": "Learn how to make digital content accessible by using color effectively. This guide explains color contrast requirements , common accessibility barriers, ...",
+    "host_name": "www.section508.gov",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://venngage.com",
+    "name": "Accessible Color Palette Generator | WCAG Compliant",
+    "snippet": "An accessible color palette ensures readers with visual impairments and disabilities can see and understand your design . Contrast is key to achieve this goal.",
+    "host_name": "venngage.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://colorpalapp.vercel.app",
+    "name": "Accessible Dashboard Color Combinations (WCAG",
+    "snippet": "Absolutely. Dark themes can be fully WCAG compliant . Use light text (#E0E0E0 or brighter) on dark surfaces (#1A1A1A or similar) and ensure all interactive ... Read more",
+    "host_name": "colorpalapp.vercel.app",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://ets.osu.edu",
+    "name": "Color Guidelines for Digital Accessibility",
+    "snippet": "Text and interactive elements should have a color contrast ratio of at least 4.5:1. WebAIM Color Contrast Checker · Color should not be the only indicator for ... Read more",
+    "host_name": "ets.osu.edu",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://webaim.org",
+    "name": "Understanding WCAG 2 Contrast and Color Requirements",
+    "snippet": "Jan 9, 2021 — In WCAG 2, contrast is a measure of the difference in perceived \"luminance\" or brightness between two colors (the phrase never used in WCAG).",
+    "host_name": "webaim.org",
+    "rank": 4,
+    "date": "Jan 9, 2021",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.accessibilitychecker.org",
+    "name": "The Designer's Guide to Dark Mode Accessibility",
+    "snippet": "Jan 6, 2026 — To be accessible, dark themes still need to meet WCAG requirements just like light interfaces do. Maintaining the 4.5:1 Contrast Ratio (Level AA). Read more",
+    "host_name": "www.accessibilitychecker.org",
+    "rank": 5,
+    "date": "Jan 6, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.w3.org",
+    "name": "Colors with Good Contrast | Web Accessibility Initiative (WAI)",
+    "snippet": "Jul 15, 2024 — Good design means sufficient contrast between foreground background and colors . That's not just text and images but links, icons, and buttons. Read more",
+    "host_name": "www.w3.org",
+    "rank": 6,
+    "date": "Jul 15, 2024",
+    "favicon": ""
+  }
+]

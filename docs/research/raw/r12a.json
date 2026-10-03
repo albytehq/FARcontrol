@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://github.com",
+    "name": "Yeet/SECURITY.md at main · conception-world/Yeet",
+    "snippet": "Browser-driven attacks (drive-by, DNS rebinding ). Any web page open in a browser can attempt to connect to local ports. Without defenses, an attacker page ... Read more",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.gitlab.com",
+    "name": "Secure coding development guidelines",
+    "snippet": "These guidelines are intended to help developers write secure Ruby code from the start, identify potential security vulnerabilities early in the development ... Read more",
+    "host_name": "docs.gitlab.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://cvepatch.com",
+    "name": "DNS-Rebinding RCE Patch Review Shows a Partial fix",
+    "snippet": "Jul 9, 2026 — Patch review for CVE-2026-49471 in Serena MCP Toolkit. Assesses the Flask Host-header allowlist fix for DNS rebinding -driven unauthenticated ...",
+    "host_name": "cvepatch.com",
+    "rank": 2,
+    "date": "Jul 9, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://nhimg.org",
+    "name": "How should security teams protect internal Ray",
+    "snippet": "Aug 23, 2026 — Treat Ray dashboards and job APIs as privileged execution surfaces, not harmless developer tools . Upgrade to a fixed release, enable token ...",
+    "host_name": "nhimg.org",
+    "rank": 3,
+    "date": "Aug 23, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://issues.chromium.org",
+    "name": "Security: malicious WPAD server can proxy localhost",
+    "snippet": "When Chrome is installed on Windows and the user joins a malicious network that advertises a WPAD script (e.g. via DHCP), Chrome will fetch the WPAD script from ... Read more",
+    "host_name": "issues.chromium.org",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://deepness-lab.org",
+    "name": "Localhost Detour from Public to Private Networks",
+    "snippet": "by Y Afek · Cited by 1 — Attackers have been abusing the above capability to launch browser-based attacks on internet users by embedding malicious requests in a website the victim is ... Read more",
+    "host_name": "deepness-lab.org",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://gitlab.gnome.org",
+    "name": "Security Issue: Server does not check value of Host header",
+    "snippet": "Apr 6, 2021 — Message Summary The server-part of GUPNP appears to be vulnerable to DNS - rebinding attacks because...",
+    "host_name": "gitlab.gnome.org",
+    "rank": 6,
+    "date": "Apr 6, 2021",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://builder.aws.com",
+    "name": "10 Best Practices to Secure MCP Servers",
+    "snippet": "Apr 30, 2026 — This guide presents 10 best practices for securing MCP servers, with concrete examples, threat scenarios, and implementation guidance.",
+    "host_name": "builder.aws.com",
+    "rank": 0,
+    "date": "Apr 30, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.lasso.security",
+    "name": "MCP: Enabling Controlled & Composable AI Systems",
+    "snippet": "Dec 28, 2025 — The Model Context Protocol is an open standard for connecting LLMs to external systems in a structured way. It defines how models discover ... Read more",
+    "host_name": "www.lasso.security",
+    "rank": 1,
+    "date": "Dec 28, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com",
+    "name": "MCP command best practice · Issue #191 · eonist/conduit",
+    "snippet": "May 13, 2025 — Implement robust error handling : Return meaningful error messages when problems occur[20] Validate inputs: Check parameters against schema ...",
+    "host_name": "github.com",
+    "rank": 2,
+    "date": "May 13, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.invatechs.com",
+    "name": "How to Build an MCP Server: Architecture & Best Practices",
+    "snippet": "Dec 9, 2025 — Learn how to build an MCP server with architecture, schemas, security, and real code examples. A complete engineering guide from Invatechs ...",
+    "host_name": "www.invatechs.com",
+    "rank": 3,
+    "date": "Dec 9, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.maxiomtech.com",
+    "name": "MCP Servers for Developers",
+    "snippet": "Feb 25, 2026 — A comprehensive guide to Model Context Protocol servers and how development teams can leverage them for improved AI-assisted workflows and ...",
+    "host_name": "www.maxiomtech.com",
+    "rank": 4,
+    "date": "Feb 25, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.digitalapi.ai",
+    "name": "MCP Architecture Explained: Everything you need to know!",
+    "snippet": "With a clear protocol for communication and contextual awareness, AI agents can better anticipate potential API issues, interpret error messages meaningfully,",
+    "host_name": "www.digitalapi.ai",
+    "rank": 5,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://clickup.com",
+    "name": "How to Implement Model Context Protocol in Your Workflow",
+    "snippet": "Apr 23, 2026 — Model context protocol is a framework or guideline used to define, structure, and communicate the key elements/ context (prompts, conversation ... Read more",
+    "host_name": "clickup.com",
+    "rank": 6,
+    "date": "Apr 23, 2026",
+    "favicon": ""
+  }
+]

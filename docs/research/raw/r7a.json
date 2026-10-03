@@ -1,0 +1,56 @@
+[
+  {
+    "url": "https://www.cs.uml.edu",
+    "name": "Bluetooth Low Energy (BLE) Security and Privacy",
+    "snippet": "by BL Energy · 2019 · Cited by 40 — Numeric Comparison is appli- cable when both devices have the capability to display and confirm information . For example, two smartphones want to pair with ... 12 pages",
+    "host_name": "www.cs.uml.edu",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.ezurio.com",
+    "name": "BLE Simple Pairing with a Shared Secret Pin",
+    "snippet": "Oct 15, 2015 — In this new pairing mechanism if a code is to be confirmed or entered, then it is a randomly generated number by the devices. This means it is ... Read more",
+    "host_name": "www.ezurio.com",
+    "rank": 1,
+    "date": "Oct 15, 2015",
+    "favicon": ""
+  },
+  {
+    "url": "https://community.silabs.com",
+    "name": "I/O Capabilities Security BLE",
+    "snippet": "Jul 5, 2018 — \"you can use a numeric input on one device and a display on the other one\" (passkey display pairing ). Does it lead to security level4 like OOB ... Read more",
+    "host_name": "community.silabs.com",
+    "rank": 2,
+    "date": "Jul 5, 2018",
+    "favicon": ""
+  },
+  {
+    "url": "https://security.stackexchange.com",
+    "name": "What algorithms are used in Bluetooth Secure Simple",
+    "snippet": "Nov 7, 2016 — From another question in SO, I got to know a lot about authentication, key generation and encryption algorithms available in Bluetooth BR/EDR:  I also ...",
+    "host_name": "security.stackexchange.com",
+    "rank": 3,
+    "date": "Nov 7, 2016",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com",
+    "name": "Bluetooth 4.0 - Secure Simple Pairing (SSP) / Pin-Code",
+    "snippet": "Jul 28, 2021 — The passkey pairing in Bluetooth usually does not make much sense from a security point of view if it's not done interactively by the user.",
+    "host_name": "github.com",
+    "rank": 4,
+    "date": "Jul 28, 2021",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.coursehero.com",
+    "name": "CS 9223 Mobile Security Assignment 5: Bluetooth Analysis",
+    "snippet": "Apr 7, 2023 — In the first part (Part 5a), a pcap for BLE Secure Connections with numeric comparison is provided. This reinforces the lecture on BLE Secure ... Read more",
+    "host_name": "www.coursehero.com",
+    "rank": 5,
+    "date": "Apr 7, 2023",
+    "favicon": ""
+  }
+]

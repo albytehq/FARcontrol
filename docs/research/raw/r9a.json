@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://www.ramotion.com",
+    "name": "Error Message Design Best Practices",
+    "snippet": "Aug 31, 2026 — A well-designed error message explains what went wrong, saves users' time, and provides actionable guidance for recovery . This is one reason ... Read more",
+    "host_name": "www.ramotion.com",
+    "rank": 0,
+    "date": "Aug 31, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://learn.microsoft.com",
+    "name": "User experience guidelines for errors - Business Central",
+    "snippet": "Jan 27, 2025 — This article guides you on applying actionable errors to offer users recommended actions for more effective error resolution. Read more",
+    "host_name": "learn.microsoft.com",
+    "rank": 1,
+    "date": "Jan 27, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.nngroup.com",
+    "name": "Error-Message Guidelines",
+    "snippet": "May 14, 2023 — Summary: Design effective error messages by ensuring they are highly visible, provide constructive communication, and respect user effort. Read more",
+    "host_name": "www.nngroup.com",
+    "rank": 2,
+    "date": "May 14, 2023",
+    "favicon": ""
+  },
+  {
+    "url": "https://usersnap.com",
+    "name": "Error Messages Designing and UX 101",
+    "snippet": "Your validation message should clearly state: What went wrong and possibly why. What's the next step the user should take to fix the error . Read more",
+    "host_name": "usersnap.com",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://aguayo.co",
+    "name": "Creating Effective Error Messages: UX Writing to Improve",
+    "snippet": "Actionable Suggestions An error message that doesn't help solve the problem is a wall. Ideally, every error should come with a potential solution or next step . Read more",
+    "host_name": "aguayo.co",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

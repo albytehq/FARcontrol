@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://puffersoft.com",
+    "name": "Master Linux Systemd: Complete Guide To Process &",
+    "snippet": "To answer who can assist you troubleshoot your background services I would answer systemctl with its appropriate control commands. Do not use kill command . Read more",
+    "host_name": "puffersoft.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://labex.io",
+    "name": "How to Manage the System Control Daemon on Linux",
+    "snippet": "In this section, we'll explore some common troubleshooting techniques and best practices for optimizing the performance of the system control daemon . Checking ... Read more",
+    "host_name": "labex.io",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://notes.salrahman.com",
+    "name": "How to use systemd to have your apps running in the",
+    "snippet": "How to use systemd to have your apps running in the background forever ... Then, to run your app as a service , invoke the following command . shell. Copy. Read more",
+    "host_name": "notes.salrahman.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.vladsiv.com",
+    "name": "Understanding systemd and creating Linux services",
+    "snippet": "Jul 1, 2022 — In this post basics of systemd , benefits of using it, and some examples that will prepare you to start off. There are no background processes ...",
+    "host_name": "www.vladsiv.com",
+    "rank": 3,
+    "date": "Jul 1, 2022",
+    "favicon": ""
+  },
+  {
+    "url": "https://servercake.in",
+    "name": "systemd Socket Activation and User Services",
+    "snippet": "Jul 22, 2026 — Start a service on demand with systemd socket activation , prove the lazy start on first connection, then run user services that survive ...",
+    "host_name": "servercake.in",
+    "rank": 4,
+    "date": "Jul 22, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://unix.stackexchange.com",
+    "name": "systemd to open a commandline and execute a program in",
+    "snippet": "Feb 21, 2024 — The commands systemctl daemon -reload and systemctl start custom_start. service is making the program EFG to run in background . The status is ... Read more",
+    "host_name": "unix.stackexchange.com",
+    "rank": 5,
+    "date": "Feb 21, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.fosslinux.com",
+    "name": "How to Use Systemd in Debian (2026 Guide)",
+    "snippet": "Jul 18, 2022 — I break down how systemd works on modern Debian 13 - from essential systemctl commands and journalctl logging to cgroups v2, timers, ...",
+    "host_name": "www.fosslinux.com",
+    "rank": 6,
+    "date": "Jul 18, 2022",
+    "favicon": ""
+  }
+]

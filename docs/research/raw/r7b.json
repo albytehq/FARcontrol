@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://levelup.gitconnected.com",
+    "name": "Building a Localhost OAuth Callback Server in Node.js",
+    "snippet": "Aug 19, 2025 — This tutorial walks through building a production-ready OAuth callback server that works across Node.js, Deno, and Bun.",
+    "host_name": "levelup.gitconnected.com",
+    "rank": 0,
+    "date": "Aug 19, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://sperixlabs.org",
+    "name": "What Leaves Your Workstation When You Use an LLM",
+    "snippet": "Apr 11, 2026 — The OAuth device flow in particular hands out a bearer token in the response body. the OAuth device flow against github .com/ login / oauth /access_ ...",
+    "host_name": "sperixlabs.org",
+    "rank": 1,
+    "date": "Apr 11, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://jaysavani.netlify.app",
+    "name": "Orbital CLI - Project Case Study",
+    "snippet": "Orbital CLI is an AI-powered developer CLI featuring Better Auth device-flow authentication, Log in using GitHub OAuth via OAuth 2.0",
+    "host_name": "jaysavani.netlify.app",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://guptadeepak.com",
+    "name": "OAuth Device Flow Vulnerabilities: 2024-2025 Attack Wave",
+    "snippet": "Aug 26, 2025 — ShinyHunters exploited OAuth device flow to breach Google, Qantas, LVMH, and dozens more, bypassing MFA without a single software exploit.",
+    "host_name": "guptadeepak.com",
+    "rank": 3,
+    "date": "Aug 26, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://stackoverflow.com",
+    "name": "mobile website - Why should I use One tap sign in over",
+    "snippet": "Credential Management API in Chrome, which essentially provides the user with login options based on the credentials that user has saved",
+    "host_name": "stackoverflow.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://code.likeagirl.io",
+    "name": "Social login with Spring Boot 3.1 — part 2 - Code Like A Girl",
+    "snippet": "Oct 18, 2023 — I wrote about the concept of OAuth 2.0 flow components, protocol and a code example of Spring Boot 3.1 with a Google OAuth client.",
+    "host_name": "code.likeagirl.io",
+    "rank": 5,
+    "date": "Oct 18, 2023",
+    "favicon": ""
+  },
+  {
+    "url": "https://developer.okta.com",
+    "name": "Articles tagged oauth",
+    "snippet": "Jul 28, 2026 — The OAuth 2.0 Device Flow is used to log in to a device using OAuth when the device doesn't have a browser, or also when the device has limited ... Read more",
+    "host_name": "developer.okta.com",
+    "rank": 6,
+    "date": "Jul 28, 2026",
+    "favicon": ""
+  }
+]

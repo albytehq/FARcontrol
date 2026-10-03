@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://docs.frankentui.com",
+    "name": "Terminal Compatibility Matrix",
+    "snippet": "This page summarizes FrankenTUI feature support across common terminals and multiplexers. It is a user-facing guide to what works where and what ftui will ... Read more",
+    "host_name": "docs.frankentui.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com",
+    "name": "nicknisi/fleet: A terminal dashboard for managing",
+    "snippet": "Sep 16, 2026 — Shows actual terminal output so you can verify state visually. Opens automatically on terminals wider than 120 columns . its ANSI/RGB colors .",
+    "host_name": "github.com",
+    "rank": 1,
+    "date": "Sep 16, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://releases.llvm.org",
+    "name": "Clang Compiler User's Manual - LLVM releases",
+    "snippet": "If the NO_COLOR environment variable is defined and not empty (regardless of value), color diagnostics are disabled. If NO_COLOR is defined and -fcolor- ... Read more",
+    "host_name": "releases.llvm.org",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://mooncakes.io",
+    "name": "BigSaltyMan/moonjson-toolkit",
+    "snippet": "4 days ago — NO_COLOR matters . A terminal is where colour appears, so a be stated without touching the environment of the process running the tests.",
+    "host_name": "mooncakes.io",
+    "rank": 3,
+    "date": "Sep 29, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://crates.io",
+    "name": "ftui-pty - crates.io: Rust Package Registry",
+    "snippet": "Sep 8, 2026 — Terminal capability detection uses standard environment variables. M , NO_COLOR , NO_COLOR set, Color downgrade is automatic based on terminal ...",
+    "host_name": "crates.io",
+    "rank": 4,
+    "date": "Sep 8, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.grizzlypeaksoftware.com",
+    "name": "Cross-Platform CLIs with Node.js - Library",
+    "snippet": "Feb 14, 2026 — Respect NO_COLOR and TTY detection . Not every environment supports colors or interactive prompts. Use Windows-safe Unicode alternatives. Not ... Read more",
+    "host_name": "www.grizzlypeaksoftware.com",
+    "rank": 5,
+    "date": "Feb 14, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://picocli.info",
+    "name": "a mighty tiny command line interface",
+    "snippet": "Apr 6, 2019 — The default width of the usage help message is 80 characters . System property picocli.usage. width can be used to specify a custom width . The ... Read more",
+    "host_name": "picocli.info",
+    "rank": 6,
+    "date": "Apr 6, 2019",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.wikiwand.com",
+    "name": "ANSI escape code",
+    "snippet": "ANSI escape sequences are a standard for in-band signaling to control cursor location, color , font styling, and other options on video text terminals and ...",
+    "host_name": "www.wikiwand.com",
+    "rank": 7,
+    "date": "",
+    "favicon": ""
+  }
+]

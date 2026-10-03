@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://chromeenterprise.google",
+    "name": "Allow access to sensors on these sites",
+    "snippet": "Setting the policy lets you set a list of URL patterns that specify the sites that can access sensors like motion and light sensors.",
+    "host_name": "chromeenterprise.google",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.calstatela.edu",
+    "name": "Guard Your Laptop",
+    "snippet": "Firewall. A system designed to prevent unauthorized access to or from a private network . Firewalls can be implemented in both hardware and software, or a ... Read more",
+    "host_name": "www.calstatela.edu",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://vpntierlists.com",
+    "name": "Browser Privacy Ranking Security Experts 2025",
+    "snippet": "Oct 11, 2025 — Verify that only your VPN's IP address appears in test results, with no references to your real IP address or local network configuration.",
+    "host_name": "vpntierlists.com",
+    "rank": 2,
+    "date": "Oct 11, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://storage.googleapis.com",
+    "name": "Chrome browser 145 Enterprise and Education release notes",
+    "snippet": "Jan 28, 2026 — A local network request is any request from a public website. This work supersedes a prior effort called Private Network Access , which used ...",
+    "host_name": "storage.googleapis.com",
+    "rank": 3,
+    "date": "Jan 28, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.oracle.com",
+    "name": "3 Security Fundamentals",
+    "snippet": "A Web browser makes an SSL connection to a server over HTTPS. The browser then sends HTTP requests and receives HTTP responses over this SSL connection . For ... Read more",
+    "host_name": "docs.oracle.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.qnap.com",
+    "name": "How can I access NAS applications and resolve the",
+    "snippet": "Jan 21, 2025 — Solution 1. Configure the VPN profile LAN port number manually Ensure the VPN client uses the correct NAS port for connection . On the NAS ...",
+    "host_name": "www.qnap.com",
+    "rank": 5,
+    "date": "Jan 21, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.verizon.com",
+    "name": "Private Ip Ranges | Verizon Business",
+    "snippet": "Network traffic is separated using a VPN that provides private , any-to-any IP connectivity. Private IP helps protect your organization by keeping your traffic ... Read more",
+    "host_name": "www.verizon.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  }
+]

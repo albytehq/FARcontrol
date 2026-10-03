@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://github.com",
+    "name": "GitHub - punkpeye/awesome-mcp-servers: A collection of",
+    "snippet": "- Self-hosted MCP server suite for Odoo ERP (versions 15-19). 197+ tools across 8 federated MCP servers (odoo-rpc, GitHub, Portainer, OCA, Teams, ... Read more",
+    "host_name": "github.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://freestuff.dev",
+    "name": "New Free tools and services for Developer",
+    "snippet": "Self hosted project management. Portainer Open Source Container Management GUI for Kubernetes, Docker, Swarm",
+    "host_name": "freestuff.dev",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.asustor.com",
+    "name": "Downloads | ASUSTOR NAS",
+    "snippet": "Control Center can help you to find and configure your NAS within the local area network. is a high performance self - hosted photo and video management solution ...",
+    "host_name": "www.asustor.com",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://rssglue.subdavis.com",
+    "name": "Subsample: Kronis Dev Blog - RSS Glue - Feeds",
+    "snippet": "Sep 6, 2026 — It's pretty easy to setup and self-host in Docker containers , doesn't eat too many resources and runs well. development was heavily AI assisted ...",
+    "host_name": "rssglue.subdavis.com",
+    "rank": 3,
+    "date": "Sep 6, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://notes.jupiterbroadcasting.com",
+    "name": "CR 460: Request Out of Time",
+    "snippet": "Tailscale : Tailscale is the easiest way to create a peer-to-peer network with the power of Wireguard. Linode: Receive a $100 60-day credit towards your new ... Read more",
+    "host_name": "notes.jupiterbroadcasting.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  }
+]

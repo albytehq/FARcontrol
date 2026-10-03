@@ -1,0 +1,47 @@
+[
+  {
+    "url": "https://docs.asenion.ai",
+    "name": "OpenAI Agents",
+    "snippet": "Keep this terminal window open while using ChatGPT; The Forwarding URL is your public ngrok URL ; The URL format will be: https://[random]. ngrok -free.app. 2.3 ... Read more",
+    "host_name": "docs.asenion.ai",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://javascript.plainenglish.io",
+    "name": "Exposing Local Node.js Applications with ngrok and",
+    "snippet": "Dec 4, 2024 — Once ngrok or localtunnel starts , you'll see output in the terminal indicating the public URL assigned to your tunnel. This URL will typically ... Read more",
+    "host_name": "javascript.plainenglish.io",
+    "rank": 1,
+    "date": "Dec 4, 2024",
+    "favicon": ""
+  },
+  {
+    "url": "https://ngrok.com",
+    "name": "How to access a Raspberry Pi remotely (without pesky port",
+    "snippet": "Aug 4, 2026 — Run the ngrok agent on the Pi and start a TCP tunnel to port 22. The agent connects outbound to ngrok , so it works even behind NAT or ... Read more",
+    "host_name": "ngrok.com",
+    "rank": 2,
+    "date": "Aug 4, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.twilio.com",
+    "name": "Automating Ngrok in Python and Twilio Applications With",
+    "snippet": "Jun 26, 2020 — Ngrok is an incredibly useful tool that creates a tunnel from a URL on the ngrok.io domain to your application running on your computer. You can ... Read more",
+    "host_name": "www.twilio.com",
+    "rank": 3,
+    "date": "Jun 26, 2020",
+    "favicon": ""
+  },
+  {
+    "url": "https://hookdeck.com",
+    "name": "A Turnkey Replacement for ngrok and RabbitMQ in Your",
+    "snippet": "Apr 30, 2026 — Yes — Hookdeck CLI replaces ngrok during development by giving you a stable webhook URL that forwards to localhost, with inspection, replay, and ... Read more",
+    "host_name": "hookdeck.com",
+    "rank": 4,
+    "date": "Apr 30, 2026",
+    "favicon": ""
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "url": "https://cadence.withremote.ai",
+    "name": "How to use server-sent events vs WebSockets | Cadence blog",
+    "snippet": "May 17, 2026 — Use WebSockets when both sides talk continuously with low latency (multiplayer, chat with typing indicators, collaborative editors, trading). Read more",
+    "host_name": "cadence.withremote.ai",
+    "rank": 0,
+    "date": "May 17, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.facebook.com",
+    "name": "Server Sent Events Vs WebSockets",
+    "snippet": "Server Sent Events Vs WebSockets ... SSE is best for one-way server-to-client updates like live feeds, while WebSockets handle two-way real-time chat and gaming. Read more",
+    "host_name": "www.facebook.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.index.dev",
+    "name": "Socket.io vs WebSockets vs Server-Sent Events",
+    "snippet": "Server - Sent Events excel in unidirectional streaming scenarios with 30-40% lower server resource consumption compared to WebSockets when clients only need to ... Read more",
+    "host_name": "www.index.dev",
+    "rank": 2,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://blog.codercops.com",
+    "name": "Server-Sent Events vs WebSockets in 2026",
+    "snippet": "May 13, 2026 — The choice between Server - Sent Events , WebSockets , and long polling matters because they have meaningfully different complexity profiles. Read more",
+    "host_name": "blog.codercops.com",
+    "rank": 3,
+    "date": "May 13, 2026",
+    "favicon": ""
+  }
+]

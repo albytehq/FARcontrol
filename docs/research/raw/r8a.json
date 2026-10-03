@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://skywork.ai",
+    "name": "The Ultimate Guide to Tailscale OpenClaw",
+    "snippet": "Mar 25, 2026 — By binding the OpenClaw gateway exclusively to a Tailscale IP via the tailscale serve command , users achieve a zero-trust network environment. Read more",
+    "host_name": "skywork.ai",
+    "rank": 0,
+    "date": "Mar 25, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://industrialmonitordirect.com",
+    "name": "Remote MQTT Access: Tailscale, Cloudflare, P2P Setup",
+    "snippet": "Jul 8, 2026 — Tailscale uses internally, so binding to the tailscale IP keeps the broker off the public LAN while remaining reachable from every tailnet node.",
+    "host_name": "industrialmonitordirect.com",
+    "rank": 1,
+    "date": "Jul 8, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://docs.vultr.com",
+    "name": "Connect Vultr to GCP Privately: Complete Setup Guide",
+    "snippet": "Jan 23, 2026 — Using Tailscale and a self-hosted Headscale controller, you can create a fully decentralized mesh VPN across cloud environments. Read more",
+    "host_name": "docs.vultr.com",
+    "rank": 2,
+    "date": "Jan 23, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://glama.ai",
+    "name": "ChatGPT Tela MCP App by LJY0317",
+    "snippet": "The source CLI now supervises Gateway, Chat, and Codex as separate daemons for start , stop , profiles , status , and shutdown",
+    "host_name": "glama.ai",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://github.com",
+    "name": "BrokkAi/mjolnir",
+    "snippet": "Tailscale The daemon starts the authenticated web viewer by default. Run mj daemon status for its URL and six-digit login code. status output keeps the viewer ...",
+    "host_name": "github.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://apps.microsoft.com",
+    "name": "ompanion - Download and install on Windows",
+    "snippet": "6 days ago — ompanion gives it a window on your PC, runs it right here or on your other machines over SSH, and installs no daemon anywhere.",
+    "host_name": "apps.microsoft.com",
+    "rank": 5,
+    "date": "Sep 27, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://wiki.teltonika-networks.com",
+    "name": "RUTC41 VPN - Teltonika Networks Wiki",
+    "snippet": "Tailscale is a zero-config, mesh VPN service. Tailscale status -(interactive status) Shows health status and messages about Tailscale. Limits the memory usage ...",
+    "host_name": "wiki.teltonika-networks.com",
+    "rank": 6,
+    "date": "",
+    "favicon": ""
+  }
+]

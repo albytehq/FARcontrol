@@ -1,0 +1,65 @@
+[
+  {
+    "url": "https://pixinvent.com",
+    "name": "Admin Panel Security: UI Best Practices for Privacy Apps",
+    "snippet": "May 8, 2026 — Sessions should be configured to expire automatically after a certain period of user inactivity. Presenting an uninterrupted, easily noticeable ...",
+    "host_name": "pixinvent.com",
+    "rank": 0,
+    "date": "May 8, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://ux.stackexchange.com",
+    "name": "How to handle when a user gets disconnected from a paid",
+    "snippet": "Nov 3, 2016 — It's a timer / countdown before the entire video conference session expires (whether there's still 10 mins, 15 mins, etc. left in the video ... Read more",
+    "host_name": "ux.stackexchange.com",
+    "rank": 1,
+    "date": "Nov 3, 2016",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.plotline.so",
+    "name": "Interactive Push Notification Templates: Use Cases,",
+    "snippet": "Mar 30, 2026 — This template adds a real-time countdown timer (and optionally a progress bar) to the notification. The timer ticks down live, creating visible ... Read more",
+    "host_name": "www.plotline.so",
+    "rank": 2,
+    "date": "Mar 30, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://themeplace.pro",
+    "name": "Session Timeouts: The Overlooked Accessibility Barrier In",
+    "snippet": "Live timers and 30-second warnings do little to help, Advance Warning Systems and Extend Functionality Websites should clearly state the time limit's existence ...",
+    "host_name": "themeplace.pro",
+    "rank": 3,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://ewebinar.com",
+    "name": "Interactions Feature Guide - eWebinar Help",
+    "snippet": "If you select After expiration , you define how long the poll remains open before it closes. This gives attendees time to respond before results are revealed. Read more",
+    "host_name": "ewebinar.com",
+    "rank": 4,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://tczonline.org",
+    "name": "My Encounter with Total Casino Auto Logout Function",
+    "snippet": "Sep 9, 2026 — We also liked the visual clarity of the countdown timer on the warning pop-up. It clears ambiguity; you know exactly how many seconds remain ... Read more",
+    "host_name": "tczonline.org",
+    "rank": 5,
+    "date": "Sep 9, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.researchgate.net",
+    "name": "(PDF) Time Perception During Online Shopping: A Mixed-",
+    "snippet": "Sep 15, 2025 — Urgency cues such as countdown timers and scarcity messages are increasingly used in e-commerce. This mixed- methods study tested how such cues ... Read more",
+    "host_name": "www.researchgate.net",
+    "rank": 6,
+    "date": "Sep 15, 2025",
+    "favicon": ""
+  }
+]

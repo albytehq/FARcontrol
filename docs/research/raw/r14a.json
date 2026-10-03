@@ -1,0 +1,38 @@
+[
+  {
+    "url": "https://news.ycombinator.com",
+    "name": "Principles for agent-native CLIs",
+    "snippet": "While table formatting can confuse an LLM in some cases, a natural language output in pure text is almost always better than JSON for small amounts of data. Read more",
+    "host_name": "news.ycombinator.com",
+    "rank": 0,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.typingmind.com",
+    "name": "Agent Cli - AI Skill for Any LLM",
+    "snippet": "Use this skill when the user wants to make scripts machine-readable for AI agents , add --json flags, convert print statements to structured JSON, build a CLI ... Read more",
+    "host_name": "www.typingmind.com",
+    "rank": 1,
+    "date": "",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.infoq.com",
+    "name": "Patterns for AI Agent Driven CLIs",
+    "snippet": "Aug 8, 2025 — Ensure every CLI command has a machine friendly escape hatch: Flags, environment variables, and semantic exit codes allow for automation ... Read more",
+    "host_name": "www.infoq.com",
+    "rank": 2,
+    "date": "Aug 8, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.openstatus.dev",
+    "name": "Building a CLI That Works for Humans and Machines",
+    "snippet": "Apr 2, 2026 — Design patterns for building CLIs that work for both developers and AI agents : TTY detection, wizard fallback, structured errors, and JSON",
+    "host_name": "www.openstatus.dev",
+    "rank": 3,
+    "date": "Apr 2, 2026",
+    "favicon": ""
+  }
+]

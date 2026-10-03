@@ -1,0 +1,74 @@
+[
+  {
+    "url": "https://devopsschool.org",
+    "name": "What is IAM? Meaning, Examples, Use Cases, and How to",
+    "snippet": "Feb 22, 2026 — Provide credentials to runtime. Enable just- in-time access for incident responders . temporary credentials. Credential provisioning: Secret or  ...",
+    "host_name": "devopsschool.org",
+    "rank": 0,
+    "date": "Feb 22, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "http://devsecopsschool.com",
+    "name": "What is Discretionary Access Control? Meaning, Architecture",
+    "snippet": "Feb 20, 2026 — Developer shares temporary credentials to a third-party vendor; vendor retains access after contract ends. Service account created for CI with ... Read more",
+    "host_name": "devsecopsschool.com",
+    "rank": 1,
+    "date": "Feb 20, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.windows-active-directory.com",
+    "name": "AD group expiration and recertification best practices",
+    "snippet": "Oct 17, 2025 — Expiration patterns that work in real environments. 1) “ Temporary membership” pattern ( time -boxed access ). Use this for incident response, ... Read more",
+    "host_name": "www.windows-active-directory.com",
+    "rank": 2,
+    "date": "Oct 17, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://levelup.gitconnected.com",
+    "name": "Preventing Tool Misuse in AI Agents - Level Up Coding",
+    "snippet": "Mar 15, 2026 — Just-in-Time and Ephemeral Access “Grant temporary credentials or API tokens that expire immediately after use. Bind keys to specific user ...",
+    "host_name": "levelup.gitconnected.com",
+    "rank": 3,
+    "date": "Mar 15, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://nhimg.org",
+    "name": "Why volunteer cloud access should be temporary and",
+    "snippet": "3 days ago — How should teams manage identity and access when volunteers need rapid cloud access for a public health app?",
+    "host_name": "nhimg.org",
+    "rank": 4,
+    "date": "Sep 30, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://cloudsecurityalliance.org",
+    "name": "AICMv1.1 Implementation Guidelines for Application",
+    "snippet": "Jun 22, 2026 — Implement dynamic data access patterns including temporary, just- in-time access grants. temporary access grants with automatic expiration ...",
+    "host_name": "cloudsecurityalliance.org",
+    "rank": 5,
+    "date": "Jun 22, 2026",
+    "favicon": ""
+  },
+  {
+    "url": "https://benroberts.io",
+    "name": "Enhance Workload Identity Security with Just-In-Time",
+    "snippet": "Nov 7, 2025 — Grant automation identities temporary elevated permissions on demand by orchestrating just -in- time Azure RBAC through GitHub Actions and ...",
+    "host_name": "benroberts.io",
+    "rank": 6,
+    "date": "Nov 7, 2025",
+    "favicon": ""
+  },
+  {
+    "url": "https://www.progressiverobot.com",
+    "name": "How to Implement Just-In-Time (JIT) Administration on",
+    "snippet": "Dec 26, 2022 — Just-In-Time (JIT) administration is a security model that eliminates persistent privileged access. Instead of assigning administrators to ...",
+    "host_name": "www.progressiverobot.com",
+    "rank": 7,
+    "date": "Dec 26, 2022",
+    "favicon": ""
+  }
+]
