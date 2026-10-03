@@ -2,7 +2,102 @@
 
 All notable changes to FARcontrol. Versions 0.1.0 → 0.8.0 were internal engineering
 milestones (never published as releases, per owner decision D-042); **v1.0.0 and v1.1.0
-are the published releases.** Dates are 2026-10-02 (UTC).
+are the published releases.** Dates are 2026-10-02 (UTC). v1.2.0: 2026-10-03 (UTC).
+
+## [1.2.0] — 2026-10-03
+
+**Ephemeral session credentials: the whole story is now two lines.** `frtrol start` alone
+mints the complete credential set — device id + session password + admin token — and
+**every one of those dies when that daemon run ends.** The agent connects with exactly
+`frtrol agent` (device id + session password, nothing else), keeps working after closing
+its terminal via a supervised background runtime, and loses everything (credentials
+erased, runtime exited) the moment the owner's session ends. Verified as one wall:
+**104 unit tests + 262 e2e checks + 13 mutation checks, clippy 0, cargo-audit 0 CVEs,
+secret-scan clean, smoke §50 DoD 37/37, browser-tested console v1.2.**
+
+### Added
+- **Ephemeral session model (ADR-0028):** per-`frtrol start` rotation of the session
+  password, the HMAC session key, and the admin token. Old passwords/keys are dead the
+  moment a new start mints fresh ones — fail-closed by construction (a dead daemon
+  authenticates nothing). The machine's device id (`FAR-XXXX-XXXX`) is a stable identity,
+  never a secret. `frtrol rotate` re-mints password + admin token mid-run **without
+  touching the session key** — connected agents keep working through a rotation.
+- **`frtrol agent` connect flow (ADR-0029):** interactive connect with hidden prompts,
+  endpoint ladder (`--url`/env → remembered host → localhost), TOFU cert pinning with
+  `--expect-fp` strict verification (a mismatch aborts **before** the password is sent,
+  and a mismatched cert is never left pinned).
+- **Background runtime `agentd` (ADR-0030, hard requirement §17):** the connect flow
+  spawns a detached runtime (own process group, single instance per agent home). It
+  heartbeats every 15 s so `frtrol status` and the console show **live agent chips**;
+  reconnects with capped exponential backoff; and on a terminal state (`expired`,
+  `revoked`, `stop`) it **erases its own credentials and exits** — the anti-backdoor
+  rule. `frtrol agent status [--json]` and `frtrol agent stop` manage it. Operations do
+  not proxy through the runtime — the CLI talks to the daemon directly via the saved
+  `connection.json` (0600).
+- **`frtrol stop` + `POST /v1/admin/shutdown`:** graceful session end from the owner CLI
+  or the console.
+- **Host-header allowlist on the admin plane (ADR-0032, r12):** foreign `Host` headers
+  get `403 bad_host` — closes the DNS-rebinding class against the cookie path. The
+  agent plane (HMAC, no ambient cookies) is deliberately unaffected.
+- **Web console v1.2 (ADR-0032):** session-first redesign — header with device id,
+  version, uptime, live agent chips (aria-live), persistent PANIC; tabs
+  Activity/Sessions/Audit/Advanced; `/ui/rotate` mirrors `frtrol rotate` (new password
+  shown once in-modal); login label says the token comes from `frtrol start`; polling
+  pauses when the tab is hidden; a11y fixes (WCAG-computed badge contrast, focus-visible,
+  aria-labels, in-flight button disabling).
+
+### Changed
+- **CLI surface (ADR-0031):** `frtrol device …`, `frtrol agent login`, and the v1.0
+  `--token` flag are **removed** (documented breaking change — the registry they
+  operated on no longer exists). `frtrol start` prints the session box (r6: ≤15 lines,
+  script-safe value labels, operator detail behind `--verbose`); `frtrol status` shows
+  the session + live agents; bare `frtrol` prints the v1.2 quick guide.
+- **Exit-code contract (§66):** `invalid_credentials` / `invalid_device_id` /
+  `device_locked` / `login_disabled` now exit **3** (auth); agent-subcommand transport
+  failures exit **6** (unavailable) / **5** (timeout) instead of a generic 1.
+- `frtrol panic` output reports the v1.2 rotation set (session password + session key +
+  admin token).
+
+### Fixed (all e2e-found, mutation- or smoke-verified)
+- **rotate/panic bricked the owner CLI:** the daemon kept the *old* admin token in
+  memory after `frtrol rotate` / `frtrol panic` / their console equivalents, so every
+  subsequent owner command failed `admin_auth_failed` until restart. The live token is
+  now updated in place at every rotation site.
+- **Innocent lockout inheritance:** the global auth-burst brake put the storm's strike
+  count onto whichever principal happened to call next — a valid agent heartbeat beside
+  a brute-force storm could wedge its own progressive lock. The brake now refuses for its
+  seconds-scale window without touching per-principal strike state.
+- **Failed second start rotated live credentials:** a `frtrol start` against occupied
+  ports minted a new credential set *before* failing the bind — killing the running
+  session's on-disk credentials. Ports are now claimed **before** any mint
+  (bind-before-mint).
+- **agentd stop latency / stale runtime:** SIGTERM is now noticed within milliseconds
+  (term-aware sleep) instead of after the current backoff nap (up to 60 s), and
+  `stop_pid` escalates to SIGKILL so a stuck runtime can never block a reconnect.
+- **Banner extraction trap:** the start banner's web-console hint contained the words
+  "admin token", poisoning `grep 'admin token'` extractions (value lines must be
+  uniquely greppable — r6).
+
+### Migration (v5, automatic at first `frtrol start`)
+- v1.1 registry devices → **locked**, keys rotated to noise, their active grants
+  revoked, audited as `device.model_migrated`. v1.1 agents reconnect with the new
+  session password (same handover UX they already had).
+- v1.0 `agent_token` meta is ignored; the headerless request path is gone — fresh
+  installs reject it fail-closed.
+- The machine device row is created (or reused) with the stable device id; a fresh
+  session password + key are minted at every start (ADR-0028).
+
+### Verification (1.2.0 wall)
+```
+unit tests ...... 104 passed
+smoke §50 DoD ... 37/37  (session lifecycle, by hand, predictions written first)
+e2e ............. 262 passed, 0 failed  (39 sections; v1.2: session lifecycle,
+                  runtime survival, reconnect/expiry, allowlist, canary, migration)
+mutation checks .. 13 total: 9 carried + M-1 session model + M-2 host guard
+                  + M-4 password verify + M-6 migration lock (each red → revert → green)
+browser ......... console v1.2 login → session view → agent chips → Advanced (rotate/stop)
+clippy .......... 0 warnings    cargo-audit: 0 vulnerabilities    secret-scan: clean
+```
 
 ## [1.1.0] — 2026-10-02
 

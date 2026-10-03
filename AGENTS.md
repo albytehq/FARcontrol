@@ -43,6 +43,9 @@ Full meaning, tests, and examples: [`discipline.md`](discipline.md) §1.
 6. `docs/04-verification.md` — what counts as evidence.
 7. `tracking/QUESTIONS.md` — open questions that block work. **Check before each phase.**
 8. `tracking/DECISIONS.md` — spec-given defaults and recorded decisions.
+9. `docs/adr/` — 33 accepted decision records, the WHY behind every design choice
+   (ADR-0028..0032 define the v1.2 ephemeral session model — read them before touching
+   anything on the auth path).
 
 ## Session ritual (start of every session and every phase)
 
