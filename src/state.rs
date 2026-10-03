@@ -138,6 +138,9 @@ fn migrate(conn: &Connection) -> anyhow::Result<()> {
 pub fn open_mem() -> anyhow::Result<Connection> {
     let conn = Connection::open_in_memory()?;
     conn.execute_batch(SCHEMA)?;
+    // migration bookkeeping table exists in every real DB (open_db); the
+    // session-model tests query it directly.
+    conn.execute_batch("CREATE TABLE IF NOT EXISTS migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at INTEGER NOT NULL);")?;
     Ok(conn)
 }
 
@@ -778,6 +781,122 @@ pub fn nonces_cleanup(conn: &Connection) {
 // ---------- token rotation ----------
 // v1.1: the meta-table token rotator is gone — keys live in the devices table
 // and rotate through device_set_key / persist_device_key (ADR-0025).
+// v1.2: the session model lives below (ADR-0028).
+
+// ============================================================
+// v1.2.0 (ADR-0028): ephemeral session credentials + machine device
+// ============================================================
+
+/// The stable identity of THIS machine (meta `device_id`, created once).
+/// An identifier, never a credential — ADR-0028 §2 / master prompt §4.
+pub fn machine_id(conn: &Connection) -> String {
+    if let Some(id) = get_meta(conn, "device_id") {
+        if crate::crypto::device_id_valid(&id) {
+            return id;
+        }
+    }
+    // first run (or corrupt meta): mint one, collision-checked like any device id
+    let mut id = crate::crypto::gen_device_id();
+    for _ in 0..8 {
+        if query_device(conn, "SELECT id FROM devices WHERE id = ?1", params![id]).is_none() {
+            break;
+        }
+        id = crate::crypto::gen_device_id();
+    }
+    let _ = set_meta(conn, "device_id", &id);
+    id
+}
+
+/// The single v1.2 device row: the machine itself (ADR-0028 §2). Created with
+/// no password — `begin_daemon_session` mints the per-run credentials. The
+/// v1.1 login/backoff machinery is reused against this row unchanged.
+pub fn ensure_machine_device(conn: &Connection, dir: &Path, machine_id: &str) -> anyhow::Result<DeviceRow> {
+    if device_get(conn, machine_id).is_none() {
+        conn.execute(
+            "INSERT INTO devices(id, name, password_hash, device_key, status, login_enabled, created_at) VALUES (?1, 'machine', NULL, NULL, 'active', 1, ?2)",
+            params![machine_id, now()],
+        )?;
+        audit(conn, dir, "system", "device.machine_created", Some(machine_id), json!({"note": "v1.2 session model — the machine device carries per-start session credentials"}));
+    }
+    device_get(conn, machine_id).ok_or_else(|| anyhow::anyhow!("machine device row missing after ensure"))
+}
+
+/// Migration v5 `session-model-v1.2` (ADR-0031 §5): every v1.1 registry device
+/// is locked, its key rotated to noise, its active grants revoked. Runs ONCE
+/// (guarded by the migrations table); idempotent + safe to re-run.
+pub fn migrate_session_model(conn: &Connection, dir: &Path, machine_id: &str) -> anyhow::Result<()> {
+    ensure_machine_device(conn, dir, machine_id)?;
+    let done: bool = conn
+        .query_row("SELECT COUNT(*) FROM migrations WHERE id = 5", [], |r| r.get::<_, i64>(0))
+        .map(|n| n > 0)
+        .unwrap_or(false);
+    if done {
+        return Ok(());
+    }
+    let stale: Vec<DeviceRow> = device_list(conn).into_iter().filter(|d| d.id != machine_id).collect();
+    let mut revoked = 0usize;
+    for d in &stale {
+        for sid in sessions_of_device(conn, &d.id) {
+            if revoke_session(conn, dir, &sid, "v1.2 session model migration — legacy device locked", "system").is_ok() {
+                revoked += 1;
+            }
+        }
+        conn.execute(
+            "UPDATE devices SET login_enabled = 0, status = 'locked', device_key = ?1, last_rotate = ?2 WHERE id = ?3",
+            params![crate::crypto::gen_device_key(), now(), d.id],
+        )?;
+    }
+    audit(
+        conn,
+        dir,
+        "system",
+        "device.model_migrated",
+        None,
+        json!({
+            "legacy_devices_locked": stale.len(),
+            "sessions_revoked": revoked,
+            "machine_id": machine_id,
+            "note": "v1.1 registry credentials are dead — agents reconnect with the v1.2 session password"
+        }),
+    );
+    conn.execute("INSERT INTO migrations(id, name, applied_at) VALUES (5, 'session-model-v1.2', ?1)", params![now()])?;
+    Ok(())
+}
+
+/// What one `frtrol start` mints (ADR-0028 §1). The password is shown ONCE by
+/// the caller; the admin token is persisted to meta + the 0600 file by the
+/// caller (server.rs owns the file write); the key is persisted here (DB) or
+/// by the caller (keyring mode).
+pub struct SessionCreds {
+    pub password: String,
+    pub key: String,
+    pub admin_token: String,
+}
+
+/// Mint the ephemeral credential set for THIS daemon run. Rotates the machine
+/// device's password + key — the previous run's credentials die now (the core
+/// v1.2 invariant, master prompt §6: old session credentials must not
+/// silently regain access after a restart).
+pub fn begin_daemon_session(conn: &Connection, dir: &Path, machine_id: &str, store_key_in_db: bool) -> anyhow::Result<SessionCreds> {
+    let password = crate::crypto::gen_password();
+    let key = crate::crypto::gen_device_key();
+    let admin_token = crate::crypto::gen_token();
+    let hash = crate::crypto::password_hash(&password)?;
+    conn.execute(
+        "UPDATE devices SET password_hash = ?1, device_key = ?2, login_enabled = 1, status = 'active', last_rotate = ?3 WHERE id = ?4",
+        params![hash, if store_key_in_db { Some(key.clone()) } else { None }, now(), machine_id],
+    )?;
+    set_meta(conn, "admin_token", &admin_token)?;
+    audit(
+        conn,
+        dir,
+        "owner",
+        "session.started",
+        Some(machine_id),
+        json!({ "note": "session password + key + admin token rotated — all previous credentials are dead" }),
+    );
+    Ok(SessionCreds { password, key, admin_token })
+}
 
 // ============================================================
 // v1.1.0 (ADR-0025): device registry
@@ -1575,5 +1694,111 @@ mod device_tests {
         assert!(parse_key_payload("not json {").is_empty() || parse_key_payload("not json {").len() <= 1);
         // note: "not json {" is not a bare token? it IS a bare string → wrapped as legacy.
         // acceptable: any non-JSON payload is treated as a bare v1.0 token.
+    }
+}
+
+// ============================================================
+// v1.2.0 session model tests (ADR-0028 / ADR-0031 §5)
+// ============================================================
+
+#[cfg(test)]
+mod session_model_tests {
+    use super::*;
+
+    struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        fn new() -> Self {
+            let p = std::env::temp_dir().join(format!("farcontrol-v12-{}", crate::crypto::gen_nonce()));
+            std::fs::create_dir_all(&p).unwrap();
+            TempDir(p)
+        }
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn setup() -> (Connection, TempDir) {
+        (open_mem().unwrap(), TempDir::new())
+    }
+
+    // ---------- v1.2 session model (ADR-0028 / ADR-0031 §5) ----------
+
+    #[test]
+    fn machine_id_is_stable_and_valid() {
+        let (conn, _dir) = setup();
+        let a = machine_id(&conn);
+        let b = machine_id(&conn);
+        assert_eq!(a, b, "machine id must be stable across calls");
+        assert!(crate::crypto::device_id_valid(&a), "format FAR-XXXX-XXXX: {a}");
+        assert_eq!(get_meta(&conn, "device_id").as_deref(), Some(a.as_str()), "persisted in meta");
+    }
+
+    #[test]
+    fn migrate_session_model_locks_v11_devices_and_revokes_their_grants() {
+        let (conn, dir) = setup();
+        // simulate a v1.1 install: a registry device with password + key + an active grant
+        let old = device_create(&conn, dir.path(), "v1.1-device", Some("some-old-password"), "v1.1-key-material").unwrap();
+        let req = create_request(
+            &conn,
+            dir.path(),
+            &crate::policy::Policy::default(),
+            NewRequest { agent_name: "old-agent", agent_identity: None, scope: "terminal_only", hours: 6.0, reason: "r", device_id: Some(&old.id) },
+        )
+        .unwrap();
+        let ses = approve_request(&conn, dir.path(), &crate::policy::Policy::default(), &req.id, None).unwrap();
+        assert_eq!(ses.status, "active");
+
+        let mid = machine_id(&conn);
+        migrate_session_model(&conn, dir.path(), &mid).unwrap();
+
+        let d = device_get(&conn, &old.id).unwrap();
+        assert!(!d.login_enabled, "legacy device login disabled");
+        assert_eq!(d.status, "locked", "legacy device locked");
+        assert_ne!(d.device_key.as_deref(), Some("v1.1-key-material"), "old key rotated to noise");
+        let s2 = get_session(&conn, &ses.id).unwrap();
+        assert_eq!(effective_status(&s2), "revoked", "legacy device grants are revoked at migration");
+
+        let machine = device_get(&conn, &mid).expect("machine device exists");
+        assert!(machine.login_enabled, "machine device stays logable");
+        assert_eq!(machine.status, "active");
+
+        // idempotent: re-run changes nothing
+        migrate_session_model(&conn, dir.path(), &mid).unwrap();
+        assert!(device_get(&conn, &old.id).unwrap().login_enabled == false);
+        let n5: i64 = conn.query_row("SELECT COUNT(*) FROM migrations WHERE id=5", [], |r| r.get(0)).unwrap();
+        assert_eq!(n5, 1, "migration 5 recorded exactly once");
+    }
+
+    #[test]
+    fn begin_daemon_session_rotates_every_credential() {
+        let (conn, dir) = setup();
+        let mid = machine_id(&conn);
+        migrate_session_model(&conn, dir.path(), &mid).unwrap();
+
+        let s1 = begin_daemon_session(&conn, dir.path(), &mid, true).unwrap();
+        let tok1 = get_meta(&conn, "admin_token").unwrap();
+        let d1 = device_get(&conn, &mid).unwrap();
+        assert!(crate::crypto::password_verify(d1.password_hash.as_deref().unwrap(), &s1.password), "hash verifies");
+        assert_eq!(d1.device_key.as_deref(), Some(s1.key.as_str()), "key stored in DB (file mode)");
+        assert_ne!(tok1, "");
+
+        // a second start kills the first credentials (master prompt §6)
+        let s2 = begin_daemon_session(&conn, dir.path(), &mid, true).unwrap();
+        let d2 = device_get(&conn, &mid).unwrap();
+        assert!(!crate::crypto::password_verify(d2.password_hash.as_deref().unwrap(), &s1.password), "OLD password must fail against the current stored hash after restart");
+        assert!(crate::crypto::password_verify(d2.password_hash.as_deref().unwrap(), &s2.password), "NEW password verifies");
+        assert_ne!(s1.key, s2.key, "session key rotates");
+        assert_ne!(s1.admin_token, s2.admin_token, "admin token rotates");
+        assert_ne!(get_meta(&conn, "admin_token").unwrap(), tok1);
+
+        // keyring mode: the key never lands in the DB
+        let s3 = begin_daemon_session(&conn, dir.path(), &mid, false).unwrap();
+        assert!(device_get(&conn, &mid).unwrap().device_key.is_none(), "keyring mode keeps the key out of the DB");
+        assert!(!s3.key.is_empty());
     }
 }
